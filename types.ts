@@ -92,3 +92,9 @@ export interface ShortcutDef {
   shiftKey?: boolean;
   metaKey?: boolean;
 }
+
+export interface ToastMessage {
+  id: string;
+  type: 'success' | 'error' | 'info';
+  message: string;
+}

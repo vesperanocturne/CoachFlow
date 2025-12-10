@@ -7,9 +7,10 @@ import LandingPage from './components/LandingPage';
 import PricingModal from './components/PricingModal';
 import SettingsModal from './components/SettingsModal';
 import UserProfile from './components/UserProfile';
-import { SessionMode, AnalysisResult, SessionData, User, Scenario, ShortcutDef } from './types';
+import { ToastContainer } from './components/Toast';
+import { SessionMode, AnalysisResult, SessionData, User, Scenario, ShortcutDef, ToastMessage } from './types';
 import { generatePostSessionSummary } from './services/geminiService';
-import { LayoutDashboard, LogOut, User as UserIcon, Crown, Settings as SettingsIcon } from 'lucide-react';
+import { LayoutDashboard, LogOut, User as UserIcon, Crown, Settings as SettingsIcon, Zap, CheckCircle2 } from 'lucide-react';
 
 const DEFAULT_SHORTCUTS: ShortcutDef[] = [
   { action: 'START_STOP_SESSION', key: 'R', ctrlKey: false, altKey: true },
@@ -45,6 +46,21 @@ const App: React.FC = () => {
   // Auth Views (when logged out)
   const [authView, setAuthView] = useState<'landing' | 'login' | 'signup'>('landing');
 
+  // Toasts
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const addToast = (type: 'success' | 'error' | 'info', message: string) => {
+    const id = Date.now().toString();
+    setToasts(prev => [...prev, { id, type, message }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
   // Shortcuts State
   const [shortcuts, setShortcuts] = useState<ShortcutDef[]>(() => {
     try {
@@ -70,7 +86,7 @@ const App: React.FC = () => {
           setSessionHistory(validSessions);
           setLastSession(validSessions.length > 0 ? validSessions[validSessions.length - 1] : null);
         } else {
-          // New user or no history found
+          // New user or no history found -> Empty state
           setSessionHistory([]);
           setLastSession(null);
         }
@@ -87,11 +103,13 @@ const App: React.FC = () => {
   const saveShortcuts = (newShortcuts: ShortcutDef[]) => {
     setShortcuts(newShortcuts);
     localStorage.setItem('coachflow_shortcuts', JSON.stringify(newShortcuts));
+    addToast('success', 'Keyboard shortcuts saved');
   };
 
   const resetShortcuts = () => {
     setShortcuts(DEFAULT_SHORTCUTS);
     localStorage.setItem('coachflow_shortcuts', JSON.stringify(DEFAULT_SHORTCUTS));
+    addToast('info', 'Shortcuts reset to defaults');
   };
 
   // Helper to check if a keyboard event matches a shortcut definition
@@ -161,6 +179,7 @@ const App: React.FC = () => {
     localStorage.setItem('coachflow_user', JSON.stringify(updatedUser));
     setView('home');
     setAuthView('landing'); 
+    addToast('success', `Welcome back, ${updatedUser.name.split(' ')[0]}!`);
   };
 
   const handleLogout = () => {
@@ -170,6 +189,7 @@ const App: React.FC = () => {
     setSelectedMode(null);
     setSelectedScenario(undefined);
     setAuthView('landing');
+    addToast('info', 'Logged out successfully');
   };
 
   const handleStartSession = (mode: SessionMode) => {
@@ -209,6 +229,7 @@ const App: React.FC = () => {
   const handleUpgradeUser = () => {
     updateUser({ isPremium: true });
     setShowPricing(false);
+    addToast('success', 'Welcome to CoachFlow Pro!');
   };
 
   // Helper to persist history changes
@@ -226,6 +247,7 @@ const App: React.FC = () => {
     if (lastSession?.id === id) {
       setLastSession(prev => prev ? { ...prev, ...updates } : null);
     }
+    addToast('success', 'Session updated');
   };
 
   const blobToBase64 = (blob: Blob): Promise<string> => {
@@ -284,6 +306,7 @@ const App: React.FC = () => {
       summaryData = await generatePostSessionSummary(selectedMode!, duration, base64Audio);
     } catch (e) {
       console.error("Summary generation failed", e);
+      addToast('error', 'Failed to generate advanced summary');
     }
 
     const newSession: SessionData = {
@@ -325,6 +348,7 @@ const App: React.FC = () => {
 
     setView('dashboard');
     setIsProcessingEnd(false);
+    addToast('success', 'Session analysis complete!');
   };
 
   const getTooltipText = (action: string) => {
@@ -350,17 +374,23 @@ const App: React.FC = () => {
       );
     }
     return (
-      <Auth 
-        key={authView} 
-        onLogin={handleLogin} 
-        initialView={authView} 
-        onBack={() => setAuthView('landing')} 
-      />
+      <div className="relative">
+        <Auth 
+          key={authView} 
+          onLogin={handleLogin} 
+          initialView={authView} 
+          onBack={() => setAuthView('landing')}
+          addToast={addToast}
+        />
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
+    <div className="min-h-screen bg-slate-950 text-slate-200 font-sans">
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+      
       <PricingModal 
         isOpen={showPricing} 
         onClose={() => setShowPricing(false)} 
@@ -469,16 +499,40 @@ const App: React.FC = () => {
           
           {view === 'live' && selectedMode && (
             isProcessingEnd ? (
-              <div className="flex flex-col items-center justify-center h-[80vh] space-y-6 animate-fade-in">
-                 <div className="relative">
-                   <div className="w-16 h-16 border-4 border-primary-500/30 border-t-primary-500 rounded-full animate-spin"></div>
-                   <div className="absolute inset-0 flex items-center justify-center">
-                     <div className="w-8 h-8 bg-primary-500 rounded-full animate-pulse opacity-50"></div>
+              <div className="flex flex-col items-center justify-center h-[80vh] space-y-8 animate-fade-in relative overflow-hidden">
+                 {/* Processing UI */}
+                 <div className="absolute inset-0 bg-primary-600/5 blur-3xl rounded-full scale-150 animate-pulse-slow"></div>
+                 
+                 <div className="relative z-10 flex flex-col items-center gap-6">
+                   <div className="relative w-24 h-24">
+                     <svg className="w-full h-full" viewBox="0 0 100 100">
+                       <circle cx="50" cy="50" r="45" fill="none" stroke="#1e293b" strokeWidth="8" />
+                       <circle cx="50" cy="50" r="45" fill="none" stroke="#3b82f6" strokeWidth="8" strokeDasharray="283" strokeDashoffset="75" className="animate-[spin_2s_linear_infinite]" />
+                     </svg>
+                     <div className="absolute inset-0 flex items-center justify-center">
+                       <Zap size={32} className="text-primary-400 animate-pulse" fill="currentColor" />
+                     </div>
                    </div>
-                 </div>
-                 <div className="text-center">
-                   <h3 className="text-xl font-bold text-white mb-2">Generating Analysis</h3>
-                   <p className="text-slate-400 animate-pulse">Building your improvement plan...</p>
+                   
+                   <div className="text-center space-y-2">
+                     <h3 className="text-2xl font-bold text-white tracking-tight">Generating Report</h3>
+                     <p className="text-slate-400">Our AI agents are analyzing your performance...</p>
+                   </div>
+
+                   <div className="w-full max-w-xs space-y-3 mt-4">
+                      <div className="flex items-center gap-3 text-sm text-slate-300">
+                        <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center"><CheckCircle2 size={10} className="text-slate-900" /></div>
+                        <span>Processing Video Stream</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-sm text-slate-300">
+                        <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center"><CheckCircle2 size={10} className="text-slate-900" /></div>
+                        <span>Analyzing Audio Metrics</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-sm text-white font-bold animate-pulse">
+                        <div className="w-4 h-4 rounded-full border-2 border-primary-500 border-t-transparent animate-spin"></div>
+                        <span>Compiling Improvement Plan...</span>
+                      </div>
+                   </div>
                  </div>
               </div>
             ) : (
@@ -508,6 +562,7 @@ const App: React.FC = () => {
               onUpdateUser={updateUser}
               onLogout={handleLogout}
               onOpenPricing={() => setShowPricing(true)}
+              addToast={addToast}
             />
           )}
         </div>

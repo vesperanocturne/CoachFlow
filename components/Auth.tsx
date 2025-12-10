@@ -6,6 +6,7 @@ interface AuthProps {
   onLogin: (user: User) => void;
   initialView?: 'login' | 'signup';
   onBack?: () => void;
+  addToast?: (type: 'success' | 'error' | 'info', message: string) => void;
 }
 
 type AuthMode = 'login' | 'signup' | 'forgot';
@@ -51,7 +52,7 @@ const hashPassword = async (password: string, salt: string): Promise<string> => 
   }
 };
 
-const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) => {
+const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack, addToast }) => {
   const [mode, setMode] = useState<AuthMode>(initialView);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -210,6 +211,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
                 localStorage.setItem('coachflow_db_users', JSON.stringify(users));
                 
                 setSuccessMessage("Password reset successfully! Redirecting to login...");
+                if(addToast) addToast('success', 'Password reset successfully!');
                 setTimeout(() => {
                     setMode('login');
                     setSuccessMessage(null);

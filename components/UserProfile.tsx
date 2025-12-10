@@ -7,9 +7,10 @@ interface UserProfileProps {
   onUpdateUser: (updates: Partial<User>) => void;
   onLogout: () => void;
   onOpenPricing: () => void;
+  addToast: (type: 'success' | 'error' | 'info', message: string) => void;
 }
 
-const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdateUser, onLogout, onOpenPricing }) => {
+const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdateUser, onLogout, onOpenPricing, addToast }) => {
   const [name, setName] = useState(user.name);
   const [isEditing, setIsEditing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -17,6 +18,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdateUser, onLogout,
   const handleSave = () => {
     onUpdateUser({ name });
     setIsEditing(false);
+    addToast('success', 'Profile name updated');
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -25,6 +27,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdateUser, onLogout,
       const reader = new FileReader();
       reader.onloadend = () => {
         onUpdateUser({ avatarUrl: reader.result as string });
+        addToast('success', 'Profile photo updated');
       };
       reader.readAsDataURL(file);
     }

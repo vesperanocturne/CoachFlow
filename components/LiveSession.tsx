@@ -163,6 +163,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, scenario, onEndSession,
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null); // Ref to track active stream for cleanup
   
   // Data State
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -179,10 +180,12 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, scenario, onEndSession,
   // Cleanup
   useEffect(() => {
     return () => {
-      if (stream) stream.getTracks().forEach(track => track.stop());
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
       if (analysisInterval.current) window.clearInterval(analysisInterval.current);
     };
-  }, []); // Run only on unmount
+  }, []);
 
   const requestMediaAccess = async () => {
     setCameraError(null);
@@ -192,6 +195,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, scenario, onEndSession,
         audio: true 
       });
       setStream(mediaStream);
+      streamRef.current = mediaStream;
       setSessionState('green-room');
     } catch (err: any) {
       console.error("Error accessing media devices:", err);

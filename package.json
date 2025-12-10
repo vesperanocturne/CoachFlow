@@ -1,24 +1,27 @@
 {
   "name": "coachflow",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "version": "1.0.0",
+  "description": "Real-time AI professional coaching platform",
+  "main": "server.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "start": "node server.js",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "^1.31.0",
-    "react": "^19.2.1",
-    "lucide-react": "^0.556.0",
-    "recharts": "^3.5.1",
-    "react-dom": "^19.2.1"
+    "@google/genai": "^0.1.1",
+    "express": "^4.18.2",
+    "lucide-react": "^0.263.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "recharts": "^2.12.0"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@types/react": "^18.2.15",
+    "@types/react-dom": "^18.2.7",
+    "@vitejs/plugin-react": "^4.0.3",
+    "typescript": "^5.0.2",
+    "vite": "^4.4.5"
   }
 }

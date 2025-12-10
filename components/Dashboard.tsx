@@ -71,6 +71,9 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
     const last = history[history.length - 1];
     const prev = history[history.length - 2];
     
+    // Safety check if prev exists
+    if (!prev) return null;
+
     const getScore = (s: SessionData) => {
         if (!s?.averageMetrics) return 0;
         return (s.averageMetrics.confidence + s.averageMetrics.clarity + s.averageMetrics.engagement + s.averageMetrics.contentRelevance) / 4;
