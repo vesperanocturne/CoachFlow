@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 import { SessionMode, Scenario } from '../types';
-import { Briefcase, Users, Mic2, TrendingUp, Lock, Sparkles, BookOpen, Clock, Tag } from 'lucide-react';
+import { Briefcase, Users, Mic2, TrendingUp, Lock, Sparkles, BookOpen, Clock, Tag, Handshake, Shield, Terminal } from 'lucide-react';
 
 interface ModeSelectionProps {
   onSelectMode: (mode: SessionMode) => void;
@@ -28,12 +27,36 @@ const MODES = [
     premium: false
   },
   {
+    id: SessionMode.NEGOTIATION,
+    title: 'Negotiation',
+    icon: <Handshake size={28} className="text-indigo-400" />,
+    description: 'Practice salary discussions and deal-making tactics.',
+    gradient: 'from-indigo-500/10 to-indigo-500/5',
+    premium: false
+  },
+  {
     id: SessionMode.PRESENTATION,
     title: 'Public Speaking',
     icon: <Mic2 size={28} className="text-purple-400" />,
     description: 'Improve pacing, tone, and audience engagement.',
     gradient: 'from-purple-500/10 to-purple-500/5',
     premium: false
+  },
+  {
+    id: SessionMode.CODING_CHALLENGE,
+    title: 'Technical Interview',
+    icon: <Terminal size={28} className="text-pink-400" />,
+    description: 'Live coding environment to practice technical explanation.',
+    gradient: 'from-pink-500/10 to-pink-500/5',
+    premium: false
+  },
+  {
+    id: SessionMode.CONFLICT_RESOLUTION,
+    title: 'Conflict Resolution',
+    icon: <Shield size={28} className="text-rose-400" />,
+    description: 'De-escalate tension and manage difficult conversations.',
+    gradient: 'from-rose-500/10 to-rose-500/5',
+    premium: true
   },
   {
     id: SessionMode.INVESTOR_DEMO,
@@ -65,6 +88,37 @@ const SCENARIOS: Scenario[] = [
     durationMinutes: 3,
     prompt: "Use the STAR method (Situation, Task, Action, Result) to describe a time you failed at a project. Focus on what you learned and how you pivoted.",
     tags: ['Interview', 'Behavioral']
+  },
+  {
+    id: 'salary-negotiation',
+    title: 'Salary Negotiation',
+    description: 'Negotiate a higher starting salary for a new job offer.',
+    difficulty: 'Intermediate',
+    mode: SessionMode.NEGOTIATION,
+    durationMinutes: 5,
+    prompt: "You've just received a job offer, but the salary is 10% lower than your target. Respectfully ask for more, justifying your value without being aggressive.",
+    tags: ['Career', 'Money']
+  },
+  {
+    id: 'react-debug',
+    title: 'Frontend: React Debugging',
+    description: 'Fix a broken counter component and optimize re-renders.',
+    difficulty: 'Intermediate',
+    mode: SessionMode.CODING_CHALLENGE,
+    durationMinutes: 20,
+    prompt: "This counter isn't updating correctly and logs too many renders. Walk us through how you identify and fix the issue.",
+    initialCode: "import React, { useState } from 'react';\n\nexport default function Counter() {\n  const [count, setCount] = useState(0);\n  \n  // Why isn't this working?\n  const increment = () => {\n    count = count + 1;\n  };\n\n  return <button onClick={increment}>{count}</button>;\n}",
+    tags: ['React', 'Frontend', 'Debugging']
+  },
+  {
+    id: 'difficult-feedback',
+    title: 'Giving Difficult Feedback',
+    description: 'Address an underperforming team member constructively.',
+    difficulty: 'Advanced',
+    mode: SessionMode.CONFLICT_RESOLUTION,
+    durationMinutes: 5,
+    prompt: "A team member has missed three deadlines in a row. Have a conversation to address the issue, understand the root cause, and set a plan for improvement.",
+    tags: ['Leadership', 'Management']
   },
   {
     id: 'product-launch',
@@ -132,14 +186,16 @@ const ModeSelection: React.FC<ModeSelectionProps> = ({ onSelectMode, onSelectSce
       <div className="w-full animate-fade-up delay-200">
         
         {activeTab === 'modes' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {MODES.map((mode) => {
               const isLocked = mode.premium && !isPremium;
               return (
                 <button
                   key={mode.id}
                   onClick={() => isLocked ? onOpenPricing() : onSelectMode(mode.id)}
-                  className={`group relative overflow-hidden glass-panel p-6 rounded-2xl transition-all duration-300 hover:scale-[1.01] hover:shadow-xl text-left border border-white/5 hover:border-white/10`}
+                  className={`group relative overflow-hidden glass-panel p-6 rounded-2xl transition-all duration-300 hover:scale-[1.01] hover:shadow-xl text-left border border-white/5 hover:border-white/10 ${
+                    mode.id === SessionMode.INVESTOR_DEMO ? 'md:col-span-2 lg:col-span-1' : ''
+                  }`}
                 >
                   <div className={`absolute inset-0 bg-gradient-to-br ${mode.gradient} opacity-0 group-hover:opacity-100 transition-opacity`} />
                   <div className="relative z-10 flex justify-between items-start mb-4">
@@ -176,6 +232,11 @@ const ModeSelection: React.FC<ModeSelectionProps> = ({ onSelectMode, onSelectSce
                         }`}>
                           {scenario.difficulty}
                         </span>
+                        {scenario.mode === SessionMode.CODING_CHALLENGE && (
+                           <span className="bg-pink-500/10 border border-pink-500/20 text-pink-400 px-2 py-1 rounded text-[10px] font-bold uppercase flex items-center gap-1">
+                             <Terminal size={10} /> Coding
+                           </span>
+                        )}
                         {isLocked && <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-1 rounded text-[10px] font-bold uppercase flex items-center gap-1"><Lock size={10} /> Pro</span>}
                       </div>
                       <div className="text-slate-500 flex items-center gap-1 text-xs">

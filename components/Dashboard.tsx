@@ -2,9 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { SessionData, User, Achievement, LearningPath, SessionMode } from '../types';
 import { 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  LineChart, Line, Legend
+  LineChart, Line, Legend, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis
 } from 'recharts';
-import { Trophy, TrendingUp, Calendar, ArrowRight, FileText, Download, Lock, Target, Zap, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { Trophy, TrendingUp, Calendar, ArrowRight, FileText, Download, Lock, Target, Zap, ChevronRight, CheckCircle2, Split, Star, ArrowLeft, History, Search, Clock } from 'lucide-react';
 
 interface DashboardProps {
   history: SessionData[];
@@ -12,6 +12,7 @@ interface DashboardProps {
   lastSession: SessionData | null;
   user: User;
   onOpenPricing: () => void;
+  onSessionUpdate: (id: string, updates: Partial<SessionData>) => void;
 }
 
 const BADGES: Achievement[] = [
@@ -21,14 +22,34 @@ const BADGES: Achievement[] = [
   { id: 'pro-member', title: 'Pro League', description: 'Upgrade to Premium', icon: '👑', unlocked: false },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession, user, onOpenPricing }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'progress'>('overview');
+const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession, user, onOpenPricing, onSessionUpdate }) => {
+  const [activeTab, setActiveTab] = useState<'overview' | 'progress' | 'compare' | 'history'>('overview');
+  const [comparisonIds, setComparisonIds] = useState<string[]>([]);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Resolve achievements
   const myBadges = BADGES.map(b => {
     const isUnlocked = user.achievements?.includes(b.id) || (b.id === 'pro-member' && user.isPremium);
     return { ...b, unlocked: isUnlocked };
   });
+
+  const toggleComparisonSelect = (id: string) => {
+    if (comparisonIds.includes(id)) {
+      setComparisonIds(prev => prev.filter(c => c !== id));
+    } else {
+      if (comparisonIds.length < 2) {
+        setComparisonIds(prev => [...prev, id]);
+      }
+    }
+  };
+
+  const markBestTake = (sessionId: string) => {
+    const label = prompt("Enter a label for this best take (e.g. 'Q4 Review Prep'):", "Top Performance");
+    if (label) {
+      onSessionUpdate(sessionId, { bestTakeLabel: label });
+    }
+  };
 
   // Calculate Learning Path based on history
   const learningPath: LearningPath = useMemo(() => {
@@ -61,10 +82,7 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
     const currentWeek = Math.ceil(history.length / 5);
 
     // Logic Tree for Personalized Path
-    // We prioritize "Hygiene" metrics (Pace/Filler words) before "Quality" metrics (Confidence/Engagement)
-    
     // Priority 1: Speech Hygiene (Pace & Filler Words)
-    // If pace is consistent (> 40% bad sessions) or filler words are high (> 5 per session avg)
     if (paceScore < 0.6 || avgFillerWordsPerSession > 5) {
       return {
         week: currentWeek,
@@ -152,6 +170,77 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
     }
   };
 
+  // Compare Logic
+  const sessionA = history.find(s => s.id === comparisonIds[0]);
+  const sessionB = history.find(s => s.id === comparisonIds[1]);
+
+  const radarComparisonData = sessionA && sessionB ? [
+    { subject: 'Confidence', A: sessionA.averageMetrics.confidence, B: sessionB.averageMetrics.confidence, fullMark: 100 },
+    { subject: 'Clarity', A: sessionA.averageMetrics.clarity, B: sessionB.averageMetrics.clarity, fullMark: 100 },
+    { subject: 'Engagement', A: sessionA.averageMetrics.engagement, B: sessionB.averageMetrics.engagement, fullMark: 100 },
+    { subject: 'Relevance', A: sessionA.averageMetrics.contentRelevance, B: sessionB.averageMetrics.contentRelevance, fullMark: 100 },
+  ] : [];
+
+  // Filtered history
+  const filteredHistory = history.filter(s => 
+    s.mode.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    s.transcriptSummary.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    s.date.includes(searchQuery)
+  ).slice().reverse();
+
+  // Helper to render session details (used in Overview and History)
+  const renderSessionDetail = (session: SessionData) => (
+    <div className="glass-panel rounded-3xl p-8 animate-fade-in">
+       <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
+          <div>
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+               <FileText size={20} className="text-primary-400" /> Session Analysis
+            </h3>
+            <p className="text-slate-500 text-sm">{session.date} • {session.mode}</p>
+          </div>
+          <div className="flex gap-2">
+            {session.bestTakeLabel && (
+                <div className="bg-amber-500/10 text-amber-400 px-3 py-1.5 rounded-lg border border-amber-500/20 flex items-center gap-1 text-sm font-bold">
+                  <Star size={14} fill="currentColor" /> {session.bestTakeLabel}
+                </div>
+            )}
+            <button onClick={handleExport} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors">
+              <Download size={18} />
+            </button>
+          </div>
+       </div>
+       
+       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="space-y-4">
+             <div className="bg-slate-900/50 p-5 rounded-2xl border border-white/5">
+                <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">AI Summary</h4>
+                <p className="text-slate-300 leading-relaxed text-sm">{session.transcriptSummary}</p>
+             </div>
+             <div className="bg-gradient-to-br from-primary-900/30 to-blue-900/30 p-5 rounded-2xl border border-primary-500/10">
+                <h4 className="text-xs font-bold text-primary-400 uppercase mb-2">Action Item</h4>
+                <p className="text-white font-medium italic">"{session.improvementScript}"</p>
+             </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+             <MetricBox label="Confidence" value={session.averageMetrics.confidence} />
+             <MetricBox label="Clarity" value={session.averageMetrics.clarity} />
+             <MetricBox label="Engagement" value={session.averageMetrics.engagement} />
+             <MetricBox label="Relevance" value={session.averageMetrics.contentRelevance} />
+          </div>
+       </div>
+
+       {session.transcript && (
+          <div className="mt-8 pt-8 border-t border-white/5">
+            <h4 className="text-xs font-bold text-slate-500 uppercase mb-4">Transcript</h4>
+            <div className="bg-slate-950/50 p-6 rounded-2xl text-slate-400 text-sm leading-relaxed max-h-60 overflow-y-auto custom-scrollbar border border-white/5">
+              {session.transcript}
+            </div>
+          </div>
+       )}
+    </div>
+  );
+
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8 pb-20 animate-fade-up">
       
@@ -184,24 +273,38 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
       </div>
 
       {/* Navigation Tabs */}
-      <div className="border-b border-white/10 flex gap-8">
+      <div className="border-b border-white/10 flex gap-8 overflow-x-auto">
         <button 
           onClick={() => setActiveTab('overview')}
-          className={`pb-4 text-sm font-bold transition-all relative ${activeTab === 'overview' ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+          className={`pb-4 text-sm font-bold transition-all relative whitespace-nowrap ${activeTab === 'overview' ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
         >
           Overview
           {activeTab === 'overview' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary-500 rounded-t-full"></div>}
         </button>
         <button 
           onClick={() => setActiveTab('progress')}
-          className={`pb-4 text-sm font-bold transition-all relative ${activeTab === 'progress' ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+          className={`pb-4 text-sm font-bold transition-all relative whitespace-nowrap ${activeTab === 'progress' ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
         >
           Trends & Analytics
           {activeTab === 'progress' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary-500 rounded-t-full"></div>}
         </button>
+        <button 
+          onClick={() => setActiveTab('history')}
+          className={`pb-4 text-sm font-bold transition-all relative whitespace-nowrap flex items-center gap-2 ${activeTab === 'history' ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+        >
+          <History size={14} /> Full History
+          {activeTab === 'history' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary-500 rounded-t-full"></div>}
+        </button>
+        <button 
+          onClick={() => setActiveTab('compare')}
+          className={`pb-4 text-sm font-bold transition-all relative whitespace-nowrap flex items-center gap-2 ${activeTab === 'compare' ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+        >
+          <Split size={14} /> Compare Sessions
+          {activeTab === 'compare' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary-500 rounded-t-full"></div>}
+        </button>
       </div>
 
-      {activeTab === 'overview' ? (
+      {activeTab === 'overview' && (
         <div className="space-y-8 animate-fade-in">
           
           {/* Learning Path Card */}
@@ -263,43 +366,11 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
           </div>
 
           {/* Recent Session */}
-          {lastSession && (
-            <div className="glass-panel rounded-3xl p-8 animate-fade-up delay-100">
-               <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
-                  <div>
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                       <FileText size={20} className="text-primary-400" /> Latest Analysis
-                    </h3>
-                    <p className="text-slate-500 text-sm">{lastSession.date} • {lastSession.mode}</p>
-                  </div>
-                  <button onClick={handleExport} className="text-slate-400 hover:text-white transition-colors">
-                    <Download size={20} />
-                  </button>
-               </div>
-               
-               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <div className="space-y-4">
-                     <div className="bg-slate-900/50 p-5 rounded-2xl border border-white/5">
-                        <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">AI Summary</h4>
-                        <p className="text-slate-300 leading-relaxed text-sm">{lastSession.transcriptSummary}</p>
-                     </div>
-                     <div className="bg-gradient-to-br from-primary-900/30 to-blue-900/30 p-5 rounded-2xl border border-primary-500/10">
-                        <h4 className="text-xs font-bold text-primary-400 uppercase mb-2">Action Item</h4>
-                        <p className="text-white font-medium italic">"{lastSession.improvementScript}"</p>
-                     </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                     <MetricBox label="Confidence" value={lastSession.averageMetrics.confidence} />
-                     <MetricBox label="Clarity" value={lastSession.averageMetrics.clarity} />
-                     <MetricBox label="Engagement" value={lastSession.averageMetrics.engagement} />
-                     <MetricBox label="Relevance" value={lastSession.averageMetrics.contentRelevance} />
-                  </div>
-               </div>
-            </div>
-          )}
+          {lastSession && renderSessionDetail(lastSession)}
         </div>
-      ) : (
+      )}
+
+      {activeTab === 'progress' && (
         <div className="space-y-8 animate-fade-in">
           {/* Detailed Analytics Tab */}
           
@@ -353,17 +424,218 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
 
              <div className="glass-panel p-6 rounded-3xl flex flex-col justify-center items-center text-center space-y-4 border border-dashed border-slate-700">
                 <div className="bg-slate-800 p-4 rounded-full">
-                  <Calendar size={32} className="text-slate-400" />
+                  <Split size={32} className="text-slate-400" />
                 </div>
                 <div>
                    <h3 className="text-lg font-bold text-white">Compare Sessions</h3>
-                   <p className="text-sm text-slate-400 max-w-xs mx-auto">Compare your best take against your baseline to see how much you've improved.</p>
+                   <p className="text-sm text-slate-400 max-w-xs mx-auto">Compare your best take against your baseline.</p>
                 </div>
-                <button className="text-primary-400 font-bold text-sm hover:text-primary-300" disabled={!user.isPremium} onClick={onOpenPricing}>
-                   {user.isPremium ? 'Select Sessions' : 'Upgrade to Compare'}
+                <button 
+                  className="text-primary-400 font-bold text-sm hover:text-primary-300" 
+                  onClick={() => setActiveTab('compare')}
+                >
+                  Go to Compare
                 </button>
              </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'history' && (
+        <div className="space-y-6 animate-fade-in">
+          {selectedHistoryId ? (
+            <div className="space-y-4">
+               <button 
+                  onClick={() => setSelectedHistoryId(null)}
+                  className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
+                >
+                  <ArrowLeft size={16} /> Back to History
+                </button>
+               {renderSessionDetail(history.find(s => s.id === selectedHistoryId)!)}
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                   <History size={20} className="text-primary-400" /> Session History
+                </h2>
+                <div className="relative w-full md:w-64">
+                   <Search size={16} className="absolute left-3 top-3 text-slate-500" />
+                   <input 
+                    type="text" 
+                    placeholder="Search sessions..." 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 pl-9 pr-4 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-primary-500"
+                   />
+                </div>
+              </div>
+
+              <div className="glass-panel rounded-2xl overflow-hidden border border-slate-800">
+                <table className="w-full text-left text-sm text-slate-400">
+                  <thead className="bg-slate-900/50 text-xs uppercase font-bold text-slate-500">
+                    <tr>
+                      <th className="px-6 py-4">Date</th>
+                      <th className="px-6 py-4">Mode</th>
+                      <th className="px-6 py-4">Duration</th>
+                      <th className="px-6 py-4">Avg Score</th>
+                      <th className="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {filteredHistory.map((session) => (
+                      <tr key={session.id} className="hover:bg-slate-800/30 transition-colors group cursor-pointer" onClick={() => setSelectedHistoryId(session.id)}>
+                        <td className="px-6 py-4 font-medium text-white">{session.date}</td>
+                        <td className="px-6 py-4">
+                          <span className="bg-slate-800 px-2 py-1 rounded text-xs border border-slate-700">{session.mode}</span>
+                        </td>
+                        <td className="px-6 py-4 flex items-center gap-2">
+                           <Clock size={14} /> {Math.floor(session.durationSeconds / 60)}m {session.durationSeconds % 60}s
+                        </td>
+                        <td className="px-6 py-4">
+                           <div className="flex items-center gap-2">
+                             <div className="w-16 h-2 bg-slate-800 rounded-full overflow-hidden">
+                               <div className="h-full bg-primary-500" style={{ width: `${(session.averageMetrics.confidence + session.averageMetrics.clarity + session.averageMetrics.engagement) / 3}%`}}></div>
+                             </div>
+                             <span className="text-xs font-bold text-white">{Math.round((session.averageMetrics.confidence + session.averageMetrics.clarity + session.averageMetrics.engagement) / 3)}%</span>
+                           </div>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                           <button className="text-primary-400 hover:text-white font-bold text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                             View Details
+                           </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {filteredHistory.length === 0 && (
+                  <div className="p-12 text-center text-slate-500">
+                    No sessions found matching "{searchQuery}"
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'compare' && (
+        <div className="space-y-6 animate-fade-in">
+          {sessionA && sessionB && comparisonIds.length === 2 ? (
+            // --- COMPARISON VIEW ---
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <button 
+                  onClick={() => setComparisonIds([])}
+                  className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
+                >
+                  <ArrowLeft size={16} /> Back to Selection
+                </button>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                   <Split size={20} className="text-primary-400" /> Session Comparison
+                </h2>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Visual Radar Overlay */}
+                <div className="glass-panel p-6 rounded-3xl h-80 relative flex flex-col items-center justify-center col-span-1 lg:col-span-2">
+                   <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Metrics Overlay</h3>
+                   <div className="w-full h-full max-w-lg">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarComparisonData}>
+                          <PolarGrid stroke="#334155" strokeDasharray="3 3" />
+                          <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} />
+                          <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                          <Radar name="Session A" dataKey="A" stroke="#3b82f6" strokeWidth={3} fill="#3b82f6" fillOpacity={0.1} />
+                          <Radar name="Session B" dataKey="B" stroke="#8b5cf6" strokeWidth={3} fill="#8b5cf6" fillOpacity={0.1} />
+                          <Legend />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                   </div>
+                </div>
+
+                {/* Session A Column */}
+                <div className="space-y-4">
+                  <ComparisonHeader 
+                     session={sessionA} 
+                     color="blue" 
+                     label="Session A" 
+                     onMarkBest={() => markBestTake(sessionA.id)}
+                  />
+                  <div className="glass-panel p-6 rounded-2xl border-t-4 border-t-blue-500 space-y-4">
+                     <div className="grid grid-cols-2 gap-4">
+                        <MetricBox label="Confidence" value={sessionA.averageMetrics.confidence} />
+                        <MetricBox label="Clarity" value={sessionA.averageMetrics.clarity} />
+                     </div>
+                     <div className="p-4 bg-slate-900/50 rounded-xl">
+                       <h4 className="text-xs text-blue-400 font-bold uppercase mb-2">Summary</h4>
+                       <p className="text-sm text-slate-300">{sessionA.transcriptSummary}</p>
+                     </div>
+                  </div>
+                </div>
+
+                {/* Session B Column */}
+                <div className="space-y-4">
+                  <ComparisonHeader 
+                    session={sessionB} 
+                    color="purple" 
+                    label="Session B" 
+                    onMarkBest={() => markBestTake(sessionB.id)}
+                  />
+                  <div className="glass-panel p-6 rounded-2xl border-t-4 border-t-purple-500 space-y-4">
+                     <div className="grid grid-cols-2 gap-4">
+                        <MetricBox label="Confidence" value={sessionB.averageMetrics.confidence} />
+                        <MetricBox label="Clarity" value={sessionB.averageMetrics.clarity} />
+                     </div>
+                     <div className="p-4 bg-slate-900/50 rounded-xl">
+                       <h4 className="text-xs text-purple-400 font-bold uppercase mb-2">Summary</h4>
+                       <p className="text-sm text-slate-300">{sessionB.transcriptSummary}</p>
+                     </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            // --- SELECTION VIEW ---
+            <div>
+              <div className="text-center mb-8">
+                <h2 className="text-2xl font-bold text-white mb-2">Select 2 Sessions to Compare</h2>
+                <p className="text-slate-400">
+                  {comparisonIds.length} / 2 Selected
+                </p>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {history.slice().reverse().map((session) => {
+                  const isSelected = comparisonIds.includes(session.id);
+                  return (
+                    <button
+                      key={session.id}
+                      onClick={() => toggleComparisonSelect(session.id)}
+                      disabled={!isSelected && comparisonIds.length >= 2}
+                      className={`relative text-left p-5 rounded-2xl border transition-all ${
+                        isSelected 
+                          ? 'bg-primary-900/20 border-primary-500 ring-2 ring-primary-500/20' 
+                          : 'bg-slate-900/40 border-slate-800 hover:bg-slate-800 hover:border-slate-700'
+                      } ${!isSelected && comparisonIds.length >= 2 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-xs font-bold text-slate-500 uppercase">{session.mode}</span>
+                        {isSelected && <CheckCircle2 size={18} className="text-primary-400" />}
+                      </div>
+                      <div className="text-white font-bold mb-1">{session.date}</div>
+                      {session.bestTakeLabel && (
+                        <div className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/20 mt-2">
+                          <Star size={10} fill="currentColor" /> {session.bestTakeLabel}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -397,6 +669,26 @@ const MetricBox = ({ label, value }: { label: string, value: number }) => (
   <div className="bg-slate-900/50 p-4 rounded-2xl text-center border border-white/5">
     <div className="text-2xl font-bold text-white">{value}</div>
     <div className="text-[10px] text-slate-500 font-bold uppercase mt-1 tracking-wider">{label}</div>
+  </div>
+);
+
+const ComparisonHeader = ({ session, color, label, onMarkBest }: { session: SessionData, color: string, label: string, onMarkBest: () => void }) => (
+  <div className="flex items-center justify-between">
+    <div>
+      <h3 className={`font-bold uppercase tracking-wider text-${color}-400 text-sm mb-1`}>{label}</h3>
+      <p className="text-white font-medium">{session.date}</p>
+      {session.bestTakeLabel && (
+        <span className="text-amber-400 text-xs font-bold flex items-center gap-1 mt-1">
+          <Star size={10} fill="currentColor" /> {session.bestTakeLabel}
+        </span>
+      )}
+    </div>
+    <button 
+      onClick={onMarkBest}
+      className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors flex items-center gap-1"
+    >
+      <Star size={12} /> Mark Best
+    </button>
   </div>
 );
 

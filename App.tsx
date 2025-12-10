@@ -1,14 +1,15 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import ModeSelection from './components/ModeSelection';
 import LiveSession from './components/LiveSession';
 import Dashboard from './components/Dashboard';
 import Auth from './components/Auth';
 import LandingPage from './components/LandingPage';
 import PricingModal from './components/PricingModal';
-import { SessionMode, AnalysisResult, SessionData, User, Scenario } from './types';
+import SettingsModal from './components/SettingsModal';
+import UserProfile from './components/UserProfile';
+import { SessionMode, AnalysisResult, SessionData, User, Scenario, ShortcutDef } from './types';
 import { generatePostSessionSummary } from './services/geminiService';
-import { LayoutDashboard, LogOut, User as UserIcon, Crown } from 'lucide-react';
+import { LayoutDashboard, LogOut, User as UserIcon, Crown, Settings as SettingsIcon } from 'lucide-react';
 
 // Mock history for initial load
 const MOCK_HISTORY: SessionData[] = [
@@ -44,6 +45,14 @@ const MOCK_HISTORY: SessionData[] = [
   }
 ];
 
+const DEFAULT_SHORTCUTS: ShortcutDef[] = [
+  { action: 'START_STOP_SESSION', key: 'R', ctrlKey: false, altKey: true },
+  { action: 'TOGGLE_METRICS', key: 'M', ctrlKey: true },
+  { action: 'NAV_HOME', key: 'H', altKey: true },
+  { action: 'NAV_DASHBOARD', key: 'D', altKey: true },
+  { action: 'OPEN_SETTINGS', key: 'S', altKey: true }
+];
+
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(() => {
     try {
@@ -55,16 +64,80 @@ const App: React.FC = () => {
   });
 
   // Views within the App (when logged in)
-  const [view, setView] = useState<'home' | 'live' | 'dashboard'>('home');
+  const [view, setView] = useState<'home' | 'live' | 'dashboard' | 'profile'>('home');
   const [selectedMode, setSelectedMode] = useState<SessionMode | null>(null);
   const [selectedScenario, setSelectedScenario] = useState<Scenario | undefined>(undefined);
   const [sessionHistory, setSessionHistory] = useState<SessionData[]>(MOCK_HISTORY);
   const [lastSession, setLastSession] = useState<SessionData | null>(MOCK_HISTORY[2]);
   const [isProcessingEnd, setIsProcessingEnd] = useState(false);
   const [showPricing, setShowPricing] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Auth Views (when logged out)
   const [authView, setAuthView] = useState<'landing' | 'login' | 'signup'>('landing');
+
+  // Shortcuts State
+  const [shortcuts, setShortcuts] = useState<ShortcutDef[]>(() => {
+    try {
+      const saved = localStorage.getItem('coachflow_shortcuts');
+      return saved ? JSON.parse(saved) : DEFAULT_SHORTCUTS;
+    } catch {
+      return DEFAULT_SHORTCUTS;
+    }
+  });
+
+  const saveShortcuts = (newShortcuts: ShortcutDef[]) => {
+    setShortcuts(newShortcuts);
+    localStorage.setItem('coachflow_shortcuts', JSON.stringify(newShortcuts));
+  };
+
+  const resetShortcuts = () => {
+    setShortcuts(DEFAULT_SHORTCUTS);
+    localStorage.setItem('coachflow_shortcuts', JSON.stringify(DEFAULT_SHORTCUTS));
+  };
+
+  // Helper to check if a keyboard event matches a shortcut definition
+  const checkShortcut = useCallback((e: KeyboardEvent, action: string) => {
+    const def = shortcuts.find(s => s.action === action);
+    if (!def) return false;
+    
+    // Normalize keys (e.key can be 'r' or 'R')
+    const eventKey = e.key.toUpperCase();
+    const defKey = def.key.toUpperCase();
+    
+    return (
+      eventKey === defKey &&
+      e.ctrlKey === !!def.ctrlKey &&
+      e.altKey === !!def.altKey &&
+      e.shiftKey === !!def.shiftKey &&
+      e.metaKey === !!def.metaKey
+    );
+  }, [shortcuts]);
+
+  // Global Key Listener
+  useEffect(() => {
+    if (!user) return;
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Avoid triggering when user is typing in an input
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+
+      if (checkShortcut(e, 'NAV_HOME')) {
+        e.preventDefault();
+        setView('home');
+      } else if (checkShortcut(e, 'NAV_DASHBOARD')) {
+        e.preventDefault();
+        setView('dashboard');
+      } else if (checkShortcut(e, 'OPEN_SETTINGS')) {
+        e.preventDefault();
+        setShowSettings(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [user, checkShortcut]);
+
 
   // Calculate Streak Logic Helper
   const calculateStreak = (lastDateStr?: string, currentStreak: number = 0): number => {
@@ -138,6 +211,13 @@ const App: React.FC = () => {
   const handleUpgradeUser = () => {
     updateUser({ isPremium: true });
     setShowPricing(false);
+  };
+
+  const handleSessionUpdate = (id: string, updates: Partial<SessionData>) => {
+    setSessionHistory(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+    if (lastSession?.id === id) {
+      setLastSession(prev => prev ? { ...prev, ...updates } : null);
+    }
   };
 
   const blobToBase64 = (blob: Blob): Promise<string> => {
@@ -237,6 +317,18 @@ const App: React.FC = () => {
     setIsProcessingEnd(false);
   };
 
+  const getTooltipText = (action: string) => {
+    const s = shortcuts.find(s => s.action === action);
+    if (!s) return "";
+    const parts = [];
+    if (s.metaKey) parts.push('Cmd');
+    if (s.ctrlKey) parts.push('Ctrl');
+    if (s.altKey) parts.push('Alt');
+    if (s.shiftKey) parts.push('Shift');
+    parts.push(s.key === ' ' ? 'Space' : s.key);
+    return `(${parts.join('+')})`;
+  };
+
   // If user is not logged in, show Landing or Auth pages
   if (!user) {
     if (authView === 'landing') {
@@ -264,6 +356,14 @@ const App: React.FC = () => {
         onClose={() => setShowPricing(false)} 
         onUpgrade={handleUpgradeUser} 
       />
+      
+      <SettingsModal 
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        shortcuts={shortcuts}
+        onUpdateShortcuts={saveShortcuts}
+        onResetShortcuts={resetShortcuts}
+      />
 
       {/* Navbar */}
       <nav className="border-b border-white/5 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
@@ -275,10 +375,10 @@ const App: React.FC = () => {
           
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-               {view !== 'home' && (
+               {view !== 'home' && view !== 'profile' && (
                  <button 
                   onClick={() => setView('dashboard')} 
-                  title="Dashboard"
+                  title={`Dashboard ${getTooltipText('NAV_DASHBOARD')}`}
                   className="p-2 hover:bg-white/5 rounded-lg text-slate-400 hover:text-white transition-all"
                 >
                     <LayoutDashboard size={20} />
@@ -307,19 +407,32 @@ const App: React.FC = () => {
                   </button>
                 )}
               </div>
-              <div className="relative group cursor-pointer" onClick={() => setShowPricing(true)}>
+              <div 
+                className="relative group cursor-pointer" 
+                onClick={() => setView('profile')}
+                title="Account Settings"
+              >
                 {user.avatarUrl ? (
                    <img 
                     src={user.avatarUrl} 
                     alt={user.name}
-                    className={`w-9 h-9 rounded-full object-cover border-2 transition-colors ${user.isPremium ? 'border-amber-500/50' : 'border-slate-700'}`}
+                    className={`w-9 h-9 rounded-full object-cover border-2 transition-colors ${view === 'profile' ? 'ring-2 ring-primary-500' : ''} ${user.isPremium ? 'border-amber-500/50' : 'border-slate-700'}`}
                   />
                 ) : (
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-colors ${user.isPremium ? 'bg-amber-500/10 border-amber-500/50 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-colors ${view === 'profile' ? 'ring-2 ring-primary-500' : ''} ${user.isPremium ? 'bg-amber-500/10 border-amber-500/50 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
                     <UserIcon size={18} />
                   </div>
                 )}
               </div>
+              
+              <button
+                onClick={() => setShowSettings(true)}
+                title={`Settings ${getTooltipText('OPEN_SETTINGS')}`}
+                className="text-slate-400 hover:text-white hover:bg-white/5 p-2 rounded-lg transition-all"
+              >
+                <SettingsIcon size={20} />
+              </button>
+
               <button 
                 onClick={handleLogout}
                 title="Sign Out"
@@ -363,6 +476,7 @@ const App: React.FC = () => {
                 mode={selectedMode} 
                 scenario={selectedScenario}
                 onEndSession={handleEndSession} 
+                shortcuts={shortcuts}
               />
             )
           )}
@@ -373,6 +487,16 @@ const App: React.FC = () => {
               lastSession={lastSession}
               onStartNew={() => setView('home')} 
               user={user}
+              onOpenPricing={() => setShowPricing(true)}
+              onSessionUpdate={handleSessionUpdate}
+            />
+          )}
+
+          {view === 'profile' && (
+            <UserProfile 
+              user={user}
+              onUpdateUser={updateUser}
+              onLogout={handleLogout}
               onOpenPricing={() => setShowPricing(true)}
             />
           )}

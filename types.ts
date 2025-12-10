@@ -1,9 +1,11 @@
-
 export enum SessionMode {
   SALES_PITCH = 'Sales Pitch',
   JOB_INTERVIEW = 'Job Interview',
   PRESENTATION = 'Public Speaking',
   INVESTOR_DEMO = 'Investor Demo',
+  CODING_CHALLENGE = 'Technical Interview',
+  NEGOTIATION = 'Negotiation',
+  CONFLICT_RESOLUTION = 'Conflict Resolution',
 }
 
 export interface Scenario {
@@ -15,6 +17,7 @@ export interface Scenario {
   prompt: string;
   durationMinutes: number;
   tags: string[];
+  initialCode?: string;
 }
 
 export interface AnalysisMetrics {
@@ -50,6 +53,7 @@ export interface SessionData {
   improvementScript: string;
   transcript?: string;
   videoUrl?: string;
+  bestTakeLabel?: string; // Tag for "Best Take"
 }
 
 export interface Achievement {
@@ -78,4 +82,13 @@ export interface User {
   provider?: 'email' | 'google';
   streakDays?: number;
   lastPracticeDate?: string;
+}
+
+export interface ShortcutDef {
+  action: string;
+  key: string;
+  ctrlKey?: boolean;
+  altKey?: boolean;
+  shiftKey?: boolean;
+  metaKey?: boolean;
 }
