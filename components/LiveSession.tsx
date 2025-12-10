@@ -5,7 +5,7 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer,
   LineChart, Line, XAxis, YAxis 
 } from 'recharts';
-import { Mic, StopCircle, Zap, Activity, AlertCircle, Loader2, Video, Play, Eye, EyeOff, ChevronUp, ChevronDown, SquareTerminal, Recording } from 'lucide-react';
+import { Mic, StopCircle, Zap, Activity, AlertCircle, Loader2, Video, Play, Eye, EyeOff, ChevronUp, ChevronDown, SquareTerminal } from 'lucide-react';
 
 interface LiveSessionProps {
   mode: SessionMode;
@@ -18,51 +18,72 @@ interface LiveSessionProps {
 
 const AudioMeter = memo(({ stream }: { stream: MediaStream }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  
   useEffect(() => {
     if (!stream || !canvasRef.current) return;
+    
+    // Browser autplay policy fix: Resume audio context if suspended
     const audioContext = new AudioContext();
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+
     const analyser = audioContext.createAnalyser();
     const microphone = audioContext.createMediaStreamSource(stream);
     microphone.connect(analyser);
+    
     analyser.fftSize = 64; 
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
+    
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
     let animationId: number;
     let isActive = true;
+    
     const draw = () => {
       if (!isActive) return;
       animationId = requestAnimationFrame(draw);
       analyser.getByteFrequencyData(dataArray);
+      
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
       const bars = 12;
       const width = (canvas.width / bars) - 4;
+      
       for (let i = 0; i < bars; i++) {
         const binSize = Math.floor(bufferLength / bars);
         let sum = 0;
         for(let j = 0; j < binSize; j++) sum += dataArray[i * binSize + j];
         const avg = sum / binSize;
+
         const height = (avg / 255) * canvas.height;
         const x = i * (width + 4);
+        
         const hue = 210 + (avg / 255) * 60; 
         ctx.fillStyle = `hsl(${hue}, 80%, 60%)`;
+        
         ctx.beginPath();
         ctx.roundRect(x, canvas.height - height, width, height, 4);
         ctx.fill();
       }
     };
+    
     draw();
+    
     return () => {
       isActive = false;
       cancelAnimationFrame(animationId);
       audioContext.close();
     };
   }, [stream]);
+
   return <canvas ref={canvasRef} width={200} height={40} />;
 });
 
+// ... (Rest of the component remains the same, included for completeness)
 const ScenarioPromptOverlay = ({ scenario, showPrompt, setShowPrompt }: { scenario: Scenario, showPrompt: boolean, setShowPrompt: (v: boolean) => void }) => {
   if (!scenario) return null;
   if (showPrompt) {
@@ -128,8 +149,6 @@ const MetricsOverlay = ({ metrics }: { metrics: AnalysisResult | null }) => {
     </div>
   );
 };
-
-// --- MAIN COMPONENT ---
 
 const LiveSession: React.FC<LiveSessionProps> = ({ mode, scenario, onEndSession, shortcuts }) => {
   const [sessionState, setSessionState] = useState<'permission' | 'green-room' | 'live'>('permission');

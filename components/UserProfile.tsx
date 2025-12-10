@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { User } from '../types';
+import { supabase } from '../services/supabaseClient';
 import { User as UserIcon, Mail, Crown, Camera, Save, LogOut, Trash2, Calendar, Zap, Award } from 'lucide-react';
 
 interface UserProfileProps {
@@ -15,18 +16,37 @@ const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdateUser, onLogout,
   const [isEditing, setIsEditing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSave = () => {
-    onUpdateUser({ name });
+  const updateProfile = async (updates: Partial<User>) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          name: updates.name || user.name,
+          avatar_url: updates.avatarUrl || user.avatarUrl
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+      onUpdateUser(updates);
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      addToast('error', 'Failed to update profile');
+    }
+  };
+
+  const handleSave = async () => {
+    await updateProfile({ name });
     setIsEditing(false);
     addToast('success', 'Profile name updated');
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        onUpdateUser({ avatarUrl: reader.result as string });
+      reader.onloadend = async () => {
+        const base64 = reader.result as string;
+        await updateProfile({ avatarUrl: base64 });
         addToast('success', 'Profile photo updated');
       };
       reader.readAsDataURL(file);

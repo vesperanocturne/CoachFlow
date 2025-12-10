@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { User } from '../types';
+import { supabase } from '../services/supabaseClient';
 import { Mail, Lock, User as UserIcon, ArrowRight, Loader2, AlertCircle, ArrowLeft, Eye, EyeOff, CheckCircle2, KeyRound } from 'lucide-react';
 
 interface AuthProps {
@@ -10,47 +11,6 @@ interface AuthProps {
 }
 
 type AuthMode = 'login' | 'signup' | 'forgot';
-
-// Helper to generate a random salt
-const generateSalt = (): string => {
-  if (window.crypto && window.crypto.getRandomValues) {
-    const array = new Uint32Array(4);
-    window.crypto.getRandomValues(array);
-    return Array.from(array).map(n => n.toString(16)).join('');
-  }
-  // Fallback salt generation
-  return Math.random().toString(36).substring(2) + Date.now().toString(36);
-};
-
-// Fallback hash (DJB2 variant) for non-secure contexts
-const simpleHash = (text: string, salt: string): string => {
-  const combined = text + salt;
-  let hash = 5381;
-  for (let i = 0; i < combined.length; i++) {
-    hash = ((hash << 5) + hash) + combined.charCodeAt(i); /* hash * 33 + c */
-  }
-  return (hash >>> 0).toString(16);
-};
-
-// Secure hash using SHA-256 with Salt
-const hashPassword = async (password: string, salt: string): Promise<string> => {
-  const combined = password + salt;
-  try {
-    // Check if Secure Context and API is available
-    if (window.crypto && window.crypto.subtle) {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(combined);
-      const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-    // Fallback for non-HTTPS/dev environments
-    return simpleHash(password, salt);
-  } catch (e) {
-    console.warn("Crypto API failed, using fallback:", e);
-    return simpleHash(password, salt);
-  }
-};
 
 const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack, addToast }) => {
   const [mode, setMode] = useState<AuthMode>(initialView);
@@ -85,9 +45,6 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack, add
       return;
     }
 
-    // Normalize email to ensure case-insensitive matching
-    const normalizedEmail = email.toLowerCase().trim();
-
     // Mode Specific Validation
     if (mode === 'signup' || mode === 'forgot') {
         if (!password || password.length < 6) {
@@ -102,138 +59,66 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack, add
         }
     }
 
-    if (mode === 'signup') {
-        if (!name) {
-            setError("Please enter your name.");
-            setIsLoading(false);
-            return;
-        }
-        // IP/Device Restriction Simulation
-        const hasRegistered = localStorage.getItem('coachflow_device_registered');
-        if (hasRegistered) {
-            setError("Access restricted: Only one account can be created from this device.");
-            setIsLoading(false);
-            return;
-        }
+    if (mode === 'signup' && !name) {
+        setError("Please enter your name.");
+        setIsLoading(false);
+        return;
     }
     
     try {
-      // Simulate network delay for realism
-      setTimeout(async () => {
-        try {
-          const storedUsers = localStorage.getItem('coachflow_db_users');
-          const users = storedUsers ? JSON.parse(storedUsers) : [];
+      if (mode === 'login') {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
 
-          if (mode === 'login') {
-            // --- LOGIN LOGIC ---
-            const foundUser = users.find((u: any) => u.email === normalizedEmail);
-            
-            if (foundUser) {
-              let isValid = false;
-              let needsMigration = false;
-
-              if (foundUser.salt) {
-                // Modern Salted Check
-                const attemptHash = await hashPassword(password, foundUser.salt);
-                if (attemptHash === foundUser.password) {
-                  isValid = true;
-                }
-              } else {
-                // Legacy Checks
-                const legacyHash = await hashPassword(password, "");
-                if (foundUser.password === legacyHash || foundUser.password === password) {
-                  isValid = true;
-                  needsMigration = true;
-                }
-              }
-
-              if (isValid) {
-                if (needsMigration) {
-                  const newSalt = generateSalt();
-                  const newHash = await hashPassword(password, newSalt);
-                  foundUser.password = newHash;
-                  foundUser.salt = newSalt;
-                  
-                  const userIndex = users.findIndex((u: any) => u.id === foundUser.id);
-                  if (userIndex !== -1) {
-                    users[userIndex] = foundUser;
-                    localStorage.setItem('coachflow_db_users', JSON.stringify(users));
-                  }
-                }
-
-                onLogin(foundUser);
-              } else {
-                setError('Invalid email or password.');
-              }
-            } else {
-              setError('Invalid email or password.');
-            }
-          } 
-          else if (mode === 'signup') {
-            // --- SIGNUP LOGIC ---
-            const existingUser = users.find((u: any) => u.email === normalizedEmail);
-            
-            if (existingUser) {
-              setError('Account already exists with this email.');
-            } else {
-                const salt = generateSalt();
-                const hashedPassword = await hashPassword(password, salt);
-
-                const newUser = {
-                id: 'user-' + Date.now(),
-                name,
-                email: normalizedEmail,
-                password: hashedPassword,
-                salt: salt,
-                isPremium: false,
-                achievements: [] as string[],
-                provider: 'email' as const
-                };
-
-                users.push(newUser);
-                localStorage.setItem('coachflow_db_users', JSON.stringify(users));
-                localStorage.setItem('coachflow_device_registered', 'true');
-                
-                onLogin(newUser);
+        if (error) throw error;
+        // User handled by onAuthStateChange in App.tsx
+      } 
+      else if (mode === 'signup') {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: name,
             }
           }
-          else if (mode === 'forgot') {
-            // --- RESET PASSWORD LOGIC ---
-            const userIndex = users.findIndex((u: any) => u.email === normalizedEmail);
-            
-            if (userIndex !== -1) {
-                const salt = generateSalt();
-                const hashedPassword = await hashPassword(password, salt);
-                
-                users[userIndex].password = hashedPassword;
-                users[userIndex].salt = salt;
-                
-                localStorage.setItem('coachflow_db_users', JSON.stringify(users));
-                
-                setSuccessMessage("Password reset successfully! Redirecting to login...");
-                if(addToast) addToast('success', 'Password reset successfully!');
-                setTimeout(() => {
-                    setMode('login');
-                    setSuccessMessage(null);
-                    setPassword('');
-                    setConfirmPassword('');
-                }, 2000);
-            } else {
-                // For security, usually we don't say if email exists, but for this demo app it's helpful
-                setError('No account found with this email address.');
-            }
-          }
-        } catch (err) {
-          console.error("Auth Logic Error:", err);
-          setError('An unexpected error occurred. Please try again.');
-        } finally {
-            setIsLoading(false);
-        }
-      }, 800);
-    } catch (err) {
-      console.error("Hashing error:", err);
-      setError('A security error occurred. Please try again.');
-      setIsLoading(false);
+        });
+
+        if (error) throw error;
+
+        setSuccessMessage("Account created! Please check your email to verify it before logging in.");
+        if (addToast) addToast('success', 'Account created! Please check your email.');
+      }
+      else if (mode === 'forgot') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin, 
+        });
+
+        if (error) throw error;
+        
+        setSuccessMessage("Password reset link sent to your email.");
+        if(addToast) addToast('success', 'Check your email for the reset link');
+        setTimeout(() => {
+            setMode('login');
+            setSuccessMessage(null);
+            setPassword('');
+            setConfirmPassword('');
+        }, 3000);
+      }
+    } catch (err: any) {
+      console.error("Auth Logic Error:", err.message);
+      let msg = err.message || 'An unexpected error occurred. Please try again.';
+      
+      // Improve error message for unverified emails or wrong passwords
+      if (msg.includes('Invalid login credentials')) {
+        msg = 'Invalid credentials. If you just signed up, please check your email for a verification link.';
+      }
+      
+      setError(msg);
+    } finally {
+        setIsLoading(false);
     }
   };
 

@@ -4,7 +4,7 @@ const compression = require('compression');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Enable Gzip compression for all text-based responses
+// Enable Gzip compression for all text-based responses to reduce payload size
 app.use(compression());
 
 // Serve static files from the build directory with caching policies
