@@ -1,16 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import ModeSelection from './components/ModeSelection';
-import LiveSession from './components/LiveSession';
-import Dashboard from './components/Dashboard';
-import Auth from './components/Auth';
-import LandingPage from './components/LandingPage';
-import PricingModal from './components/PricingModal';
-import SettingsModal from './components/SettingsModal';
-import UserProfile from './components/UserProfile';
-import { ToastContainer } from './components/Toast';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { SessionMode, AnalysisResult, SessionData, User, Scenario, ShortcutDef, ToastMessage } from './types';
 import { generatePostSessionSummary } from './services/geminiService';
-import { LayoutDashboard, LogOut, User as UserIcon, Crown, Settings as SettingsIcon, Zap, CheckCircle2 } from 'lucide-react';
+import { LayoutDashboard, LogOut, User as UserIcon, Crown, Settings as SettingsIcon, Zap, CheckCircle2, Loader2 } from 'lucide-react';
+import { ToastContainer } from './components/Toast';
+
+// Lazy load components to optimize initial load speed
+const ModeSelection = React.lazy(() => import('./components/ModeSelection'));
+const LiveSession = React.lazy(() => import('./components/LiveSession'));
+const Dashboard = React.lazy(() => import('./components/Dashboard'));
+const Auth = React.lazy(() => import('./components/Auth'));
+const LandingPage = React.lazy(() => import('./components/LandingPage'));
+const PricingModal = React.lazy(() => import('./components/PricingModal'));
+const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
+const UserProfile = React.lazy(() => import('./components/UserProfile'));
 
 const DEFAULT_SHORTCUTS: ShortcutDef[] = [
   { action: 'START_STOP_SESSION', key: 'R', ctrlKey: false, altKey: true },
@@ -19,6 +21,19 @@ const DEFAULT_SHORTCUTS: ShortcutDef[] = [
   { action: 'NAV_DASHBOARD', key: 'D', altKey: true },
   { action: 'OPEN_SETTINGS', key: 'S', altKey: true }
 ];
+
+// Full Screen Loader for Lazy Suspense
+const FullScreenLoader = () => (
+  <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center animate-fade-in">
+    <div className="relative">
+      <div className="w-16 h-16 border-4 border-primary-500/30 border-t-primary-500 rounded-full animate-spin"></div>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="w-2 h-2 bg-primary-400 rounded-full animate-pulse"></div>
+      </div>
+    </div>
+    <p className="mt-4 text-slate-500 text-sm font-medium tracking-wide animate-pulse">LOADING COACHFLOW</p>
+  </div>
+);
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(() => {
@@ -367,21 +382,25 @@ const App: React.FC = () => {
   if (!user) {
     if (authView === 'landing') {
       return (
-        <LandingPage 
-          onLogin={() => setAuthView('login')} 
-          onSignup={() => setAuthView('signup')} 
-        />
+        <Suspense fallback={<FullScreenLoader />}>
+          <LandingPage 
+            onLogin={() => setAuthView('login')} 
+            onSignup={() => setAuthView('signup')} 
+          />
+        </Suspense>
       );
     }
     return (
       <div className="relative">
-        <Auth 
-          key={authView} 
-          onLogin={handleLogin} 
-          initialView={authView} 
-          onBack={() => setAuthView('landing')}
-          addToast={addToast}
-        />
+        <Suspense fallback={<FullScreenLoader />}>
+          <Auth 
+            key={authView} 
+            onLogin={handleLogin} 
+            initialView={authView} 
+            onBack={() => setAuthView('landing')}
+            addToast={addToast}
+          />
+        </Suspense>
         <ToastContainer toasts={toasts} removeToast={removeToast} />
       </div>
     );
@@ -391,19 +410,23 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       
-      <PricingModal 
-        isOpen={showPricing} 
-        onClose={() => setShowPricing(false)} 
-        onUpgrade={handleUpgradeUser} 
-      />
+      <Suspense fallback={null}>
+        <PricingModal 
+          isOpen={showPricing} 
+          onClose={() => setShowPricing(false)} 
+          onUpgrade={handleUpgradeUser} 
+        />
+      </Suspense>
       
-      <SettingsModal 
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-        shortcuts={shortcuts}
-        onUpdateShortcuts={saveShortcuts}
-        onResetShortcuts={resetShortcuts}
-      />
+      <Suspense fallback={null}>
+        <SettingsModal 
+          isOpen={showSettings}
+          onClose={() => setShowSettings(false)}
+          shortcuts={shortcuts}
+          onUpdateShortcuts={saveShortcuts}
+          onResetShortcuts={resetShortcuts}
+        />
+      </Suspense>
 
       {/* Navbar */}
       <nav className="border-b border-white/5 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
@@ -488,83 +511,85 @@ const App: React.FC = () => {
       {/* Main Content */}
       <main className="p-0 relative">
         <div key={view} className="animate-fade-up">
-          {view === 'home' && (
-            <ModeSelection 
-              onSelectMode={handleStartSession}
-              onSelectScenario={handleStartScenario}
-              isPremium={user.isPremium} 
-              onOpenPricing={() => setShowPricing(true)}
-            />
-          )}
-          
-          {view === 'live' && selectedMode && (
-            isProcessingEnd ? (
-              <div className="flex flex-col items-center justify-center h-[80vh] space-y-8 animate-fade-in relative overflow-hidden">
-                 {/* Processing UI */}
-                 <div className="absolute inset-0 bg-primary-600/5 blur-3xl rounded-full scale-150 animate-pulse-slow"></div>
-                 
-                 <div className="relative z-10 flex flex-col items-center gap-6">
-                   <div className="relative w-24 h-24">
-                     <svg className="w-full h-full" viewBox="0 0 100 100">
-                       <circle cx="50" cy="50" r="45" fill="none" stroke="#1e293b" strokeWidth="8" />
-                       <circle cx="50" cy="50" r="45" fill="none" stroke="#3b82f6" strokeWidth="8" strokeDasharray="283" strokeDashoffset="75" className="animate-[spin_2s_linear_infinite]" />
-                     </svg>
-                     <div className="absolute inset-0 flex items-center justify-center">
-                       <Zap size={32} className="text-primary-400 animate-pulse" fill="currentColor" />
+          <Suspense fallback={<FullScreenLoader />}>
+            {view === 'home' && (
+              <ModeSelection 
+                onSelectMode={handleStartSession}
+                onSelectScenario={handleStartScenario}
+                isPremium={user.isPremium} 
+                onOpenPricing={() => setShowPricing(true)}
+              />
+            )}
+            
+            {view === 'live' && selectedMode && (
+              isProcessingEnd ? (
+                <div className="flex flex-col items-center justify-center h-[80vh] space-y-8 animate-fade-in relative overflow-hidden">
+                   {/* Processing UI */}
+                   <div className="absolute inset-0 bg-primary-600/5 blur-3xl rounded-full scale-150 animate-pulse-slow"></div>
+                   
+                   <div className="relative z-10 flex flex-col items-center gap-6">
+                     <div className="relative w-24 h-24">
+                       <svg className="w-full h-full" viewBox="0 0 100 100">
+                         <circle cx="50" cy="50" r="45" fill="none" stroke="#1e293b" strokeWidth="8" />
+                         <circle cx="50" cy="50" r="45" fill="none" stroke="#3b82f6" strokeWidth="8" strokeDasharray="283" strokeDashoffset="75" className="animate-[spin_2s_linear_infinite]" />
+                       </svg>
+                       <div className="absolute inset-0 flex items-center justify-center">
+                         <Zap size={32} className="text-primary-400 animate-pulse" fill="currentColor" />
+                       </div>
+                     </div>
+                     
+                     <div className="text-center space-y-2">
+                       <h3 className="text-2xl font-bold text-white tracking-tight">Generating Report</h3>
+                       <p className="text-slate-400">Our AI agents are analyzing your performance...</p>
+                     </div>
+
+                     <div className="w-full max-w-xs space-y-3 mt-4">
+                        <div className="flex items-center gap-3 text-sm text-slate-300">
+                          <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center"><CheckCircle2 size={10} className="text-slate-900" /></div>
+                          <span>Processing Video Stream</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-sm text-slate-300">
+                          <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center"><CheckCircle2 size={10} className="text-slate-900" /></div>
+                          <span>Analyzing Audio Metrics</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-sm text-white font-bold animate-pulse">
+                          <div className="w-4 h-4 rounded-full border-2 border-primary-500 border-t-transparent animate-spin"></div>
+                          <span>Compiling Improvement Plan...</span>
+                        </div>
                      </div>
                    </div>
-                   
-                   <div className="text-center space-y-2">
-                     <h3 className="text-2xl font-bold text-white tracking-tight">Generating Report</h3>
-                     <p className="text-slate-400">Our AI agents are analyzing your performance...</p>
-                   </div>
-
-                   <div className="w-full max-w-xs space-y-3 mt-4">
-                      <div className="flex items-center gap-3 text-sm text-slate-300">
-                        <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center"><CheckCircle2 size={10} className="text-slate-900" /></div>
-                        <span>Processing Video Stream</span>
-                      </div>
-                      <div className="flex items-center gap-3 text-sm text-slate-300">
-                        <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center"><CheckCircle2 size={10} className="text-slate-900" /></div>
-                        <span>Analyzing Audio Metrics</span>
-                      </div>
-                      <div className="flex items-center gap-3 text-sm text-white font-bold animate-pulse">
-                        <div className="w-4 h-4 rounded-full border-2 border-primary-500 border-t-transparent animate-spin"></div>
-                        <span>Compiling Improvement Plan...</span>
-                      </div>
-                   </div>
-                 </div>
-              </div>
-            ) : (
-              <LiveSession 
-                mode={selectedMode} 
-                scenario={selectedScenario}
-                onEndSession={handleEndSession} 
-                shortcuts={shortcuts}
+                </div>
+              ) : (
+                <LiveSession 
+                  mode={selectedMode} 
+                  scenario={selectedScenario}
+                  onEndSession={handleEndSession} 
+                  shortcuts={shortcuts}
+                />
+              )
+            )}
+            
+            {view === 'dashboard' && (
+              <Dashboard 
+                history={sessionHistory} 
+                lastSession={lastSession}
+                onStartNew={() => setView('home')} 
+                user={user}
+                onOpenPricing={() => setShowPricing(true)}
+                onSessionUpdate={handleSessionUpdate}
               />
-            )
-          )}
-          
-          {view === 'dashboard' && (
-            <Dashboard 
-              history={sessionHistory} 
-              lastSession={lastSession}
-              onStartNew={() => setView('home')} 
-              user={user}
-              onOpenPricing={() => setShowPricing(true)}
-              onSessionUpdate={handleSessionUpdate}
-            />
-          )}
+            )}
 
-          {view === 'profile' && (
-            <UserProfile 
-              user={user}
-              onUpdateUser={updateUser}
-              onLogout={handleLogout}
-              onOpenPricing={() => setShowPricing(true)}
-              addToast={addToast}
-            />
-          )}
+            {view === 'profile' && (
+              <UserProfile 
+                user={user}
+                onUpdateUser={updateUser}
+                onLogout={handleLogout}
+                onOpenPricing={() => setShowPricing(true)}
+                addToast={addToast}
+              />
+            )}
+          </Suspense>
         </div>
       </main>
     </div>

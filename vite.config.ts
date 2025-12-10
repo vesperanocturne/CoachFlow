@@ -12,7 +12,18 @@ export default defineConfig(({ mode }) => {
       port: 3000
     },
     build: {
-      outDir: 'dist'
+      outDir: 'dist',
+      rollupOptions: {
+        output: {
+          // Optimize bundle by splitting vendor libraries
+          manualChunks: {
+            vendor: ['react', 'react-dom'],
+            charts: ['recharts'],
+            icons: ['lucide-react'],
+            ai: ['@google/genai']
+          }
+        }
+      }
     }
   };
 });
