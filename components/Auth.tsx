@@ -9,33 +9,44 @@ interface AuthProps {
   onBack?: () => void;
 }
 
-// Fallback hash for non-secure contexts (where crypto.subtle is unavailable)
-const simpleHash = (text: string): string => {
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) {
-    const char = text.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
+// Helper to generate a random salt
+const generateSalt = (): string => {
+  if (window.crypto && window.crypto.getRandomValues) {
+    const array = new Uint32Array(4);
+    window.crypto.getRandomValues(array);
+    return Array.from(array).map(n => n.toString(16)).join('');
   }
-  return Math.abs(hash).toString(16);
+  // Fallback salt generation
+  return Math.random().toString(36).substring(2) + Date.now().toString(36);
 };
 
-// Robust hashing helper
-const hashPassword = async (text: string): Promise<string> => {
+// Fallback hash (DJB2 variant) for non-secure contexts
+const simpleHash = (text: string, salt: string): string => {
+  const combined = text + salt;
+  let hash = 5381;
+  for (let i = 0; i < combined.length; i++) {
+    hash = ((hash << 5) + hash) + combined.charCodeAt(i); /* hash * 33 + c */
+  }
+  return (hash >>> 0).toString(16);
+};
+
+// Secure hash using SHA-256 with Salt
+const hashPassword = async (password: string, salt: string): Promise<string> => {
+  const combined = password + salt;
   try {
     // Check if Secure Context and API is available
     if (window.crypto && window.crypto.subtle) {
       const encoder = new TextEncoder();
-      const data = encoder.encode(text);
+      const data = encoder.encode(combined);
       const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
     // Fallback for non-HTTPS/dev environments
-    return simpleHash(text);
+    return simpleHash(password, salt);
   } catch (e) {
     console.warn("Crypto API failed, using fallback:", e);
-    return simpleHash(text);
+    return simpleHash(password, salt);
   }
 };
 
@@ -84,40 +95,68 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
     const normalizedEmail = email.toLowerCase().trim();
     
     try {
-      const hashedPassword = await hashPassword(password);
-
-      // Simulate network delay
-      setTimeout(() => {
+      // Simulate network delay for realism
+      setTimeout(async () => {
         try {
           const storedUsers = localStorage.getItem('coachflow_db_users');
           const users = storedUsers ? JSON.parse(storedUsers) : [];
 
           if (isLogin) {
             // Login Logic
-            const foundUser = users.find((u: any) => 
-              u.email === normalizedEmail && (u.password === hashedPassword || u.password === password)
-            );
+            const foundUser = users.find((u: any) => u.email === normalizedEmail);
             
             if (foundUser) {
-              // Auto-migrate legacy passwords to hash
-              if (foundUser.password === password && foundUser.password !== hashedPassword) {
-                foundUser.password = hashedPassword;
-                const userIndex = users.findIndex((u: any) => u.id === foundUser.id);
-                if (userIndex !== -1) {
-                  users[userIndex] = foundUser;
-                  localStorage.setItem('coachflow_db_users', JSON.stringify(users));
+              let isValid = false;
+              let needsMigration = false;
+
+              if (foundUser.salt) {
+                // 1. Modern Salted Check
+                const attemptHash = await hashPassword(password, foundUser.salt);
+                if (attemptHash === foundUser.password) {
+                  isValid = true;
+                }
+              } else {
+                // 2. Legacy Checks (Plain text or Unsalted Hash)
+                // Check if it was an old unsalted SHA-256 (for migration)
+                // We'd need to re-calc legacy hash without salt here, but for simplicity we rely on
+                // handling the data structure. If no salt, it might be the previous format.
+                // Re-implement legacy hash logic briefly to check:
+                const legacyHash = await hashPassword(password, ""); // Empty salt simulates old hash
+                
+                if (foundUser.password === legacyHash || foundUser.password === password) {
+                  isValid = true;
+                  needsMigration = true;
                 }
               }
 
-              onLogin({
-                id: foundUser.id,
-                name: foundUser.name,
-                email: foundUser.email,
-                isPremium: foundUser.isPremium || false,
-                achievements: foundUser.achievements || [],
-                avatarUrl: foundUser.avatarUrl,
-                provider: 'email'
-              });
+              if (isValid) {
+                // Auto-migrate to Salted Hash if needed
+                if (needsMigration) {
+                  const newSalt = generateSalt();
+                  const newHash = await hashPassword(password, newSalt);
+                  foundUser.password = newHash;
+                  foundUser.salt = newSalt;
+                  
+                  const userIndex = users.findIndex((u: any) => u.id === foundUser.id);
+                  if (userIndex !== -1) {
+                    users[userIndex] = foundUser;
+                    localStorage.setItem('coachflow_db_users', JSON.stringify(users));
+                  }
+                }
+
+                onLogin({
+                  id: foundUser.id,
+                  name: foundUser.name,
+                  email: foundUser.email,
+                  isPremium: foundUser.isPremium || false,
+                  achievements: foundUser.achievements || [],
+                  avatarUrl: foundUser.avatarUrl,
+                  provider: 'email'
+                });
+              } else {
+                setError('Invalid email or password.');
+                setIsLoading(false);
+              }
             } else {
               setError('Invalid email or password.');
               setIsLoading(false);
@@ -132,11 +171,15 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
               return;
             }
 
+            const salt = generateSalt();
+            const hashedPassword = await hashPassword(password, salt);
+
             const newUser = {
               id: 'user-' + Date.now(),
               name,
               email: normalizedEmail,
               password: hashedPassword,
+              salt: salt, // Store the salt
               isPremium: false,
               achievements: [],
               provider: 'email'

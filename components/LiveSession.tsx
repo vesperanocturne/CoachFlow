@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { SessionMode, AnalysisResult, Suggestion } from '../types';
 import { analyzeSessionSnapshot } from '../services/geminiService';
@@ -5,14 +6,14 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, 
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar 
 } from 'recharts';
-import { Mic, StopCircle, Zap, Activity, AlertCircle, Loader2, Video, Volume2, Play } from 'lucide-react';
+import { Mic, StopCircle, Zap, Activity, AlertCircle, Loader2, Video, Volume2, Play, Settings } from 'lucide-react';
 
 interface LiveSessionProps {
   mode: SessionMode;
   onEndSession: (metrics: AnalysisResult[], recordedBlob?: Blob) => void;
 }
 
-// Audio Visualizer Component
+// Audio Visualizer Component (Smoother)
 const AudioMeter = ({ stream }: { stream: MediaStream }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -24,7 +25,7 @@ const AudioMeter = ({ stream }: { stream: MediaStream }) => {
     const microphone = audioContext.createMediaStreamSource(stream);
     microphone.connect(analyser);
     
-    analyser.fftSize = 256;
+    analyser.fftSize = 64; // Smaller FFT for smoother, chunkier bars
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
     
@@ -40,23 +41,29 @@ const AudioMeter = ({ stream }: { stream: MediaStream }) => {
       
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      // Draw simple volume bars
-      const bars = 5;
-      const width = canvas.width / bars;
-      
-      let sum = 0;
-      for(let i = 0; i < bufferLength; i++) sum += dataArray[i];
-      const avgVolume = sum / bufferLength;
-
-      // Normalize volume to 0-1 range roughly
-      const vol = Math.min(avgVolume / 50, 1);
+      const bars = 12;
+      const width = (canvas.width / bars) - 4;
       
       for (let i = 0; i < bars; i++) {
-        const height = canvas.height * vol * (0.5 + Math.random() * 0.5); // Add jitter
-        const x = i * width + 2;
+        // Average a few bins for stability
+        const binSize = Math.floor(bufferLength / bars);
+        let sum = 0;
+        for(let j = 0; j < binSize; j++) {
+           sum += dataArray[i * binSize + j];
+        }
+        const avg = sum / binSize;
+
+        const height = (avg / 255) * canvas.height;
+        const x = i * (width + 4);
         
-        ctx.fillStyle = vol > 0.1 ? '#3b82f6' : '#334155';
-        ctx.fillRect(x, canvas.height - height, width - 4, height);
+        // Gradient color based on volume
+        const hue = 210 + (avg / 255) * 60; // Blue to Purple
+        ctx.fillStyle = `hsl(${hue}, 80%, 60%)`;
+        
+        // Rounded bars
+        ctx.beginPath();
+        ctx.roundRect(x, canvas.height - height, width, height, 4);
+        ctx.fill();
       }
     };
     
@@ -68,7 +75,7 @@ const AudioMeter = ({ stream }: { stream: MediaStream }) => {
     };
   }, [stream]);
 
-  return <canvas ref={canvasRef} width={60} height={30} className="opacity-90" />;
+  return <canvas ref={canvasRef} width={200} height={40} />;
 };
 
 const LiveSession: React.FC<LiveSessionProps> = ({ mode, onEndSession }) => {
@@ -108,7 +115,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, onEndSession }) => {
     setCameraError(null);
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: 640, height: 480 }, 
+        video: { width: 1280, height: 720 }, // Request HD
         audio: true 
       });
       setStream(mediaStream);
@@ -123,7 +130,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, onEndSession }) => {
     }
   };
 
-  // Bind stream to video element whenever it changes or state changes
+  // Bind stream to video element
   useEffect(() => {
     if (stream && videoRef.current) {
       videoRef.current.srcObject = stream;
@@ -176,7 +183,8 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, onEndSession }) => {
         text,
         timestamp: Date.now()
       }));
-      setLiveSuggestions(prev => [...newSuggestions, ...prev].slice(0, 4));
+      // Keep last 6 suggestions
+      setLiveSuggestions(prev => [...newSuggestions, ...prev].slice(0, 6));
 
     } catch (e) {
       console.error("Analysis loop error", e);
@@ -230,7 +238,6 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, onEndSession }) => {
       performAnalysis();
     } catch (err) {
       console.error("Recorder error", err);
-      // Fallback
       setSessionState('live');
       analysisInterval.current = window.setInterval(performAnalysis, 4000);
     }
@@ -255,31 +262,31 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, onEndSession }) => {
   // State: Permissions Request
   if (sessionState === 'permission') {
     return (
-      <div className="flex flex-col items-center justify-center h-[80vh] p-4 text-center animate-in fade-in zoom-in-95 duration-500">
-        <div className="bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-2xl max-w-md w-full">
-          <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-6 text-primary-400">
-             <Video size={32} />
+      <div className="flex flex-col items-center justify-center h-[80vh] p-4 text-center animate-fade-in">
+        <div className="glass-panel p-8 rounded-3xl max-w-md w-full shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary-600 via-purple-600 to-primary-600"></div>
+          
+          <div className="w-20 h-20 bg-slate-900 rounded-2xl flex items-center justify-center mx-auto mb-6 text-primary-400 shadow-inner border border-white/5">
+             <Video size={36} />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Connect Your Devices</h2>
-          <p className="text-slate-400 mb-8">
-            CoachFlow needs access to your camera and microphone to analyze your performance in real-time.
-            We do not store raw footage unless you save it.
+          <h2 className="text-2xl font-bold text-white mb-3">Connect Your Devices</h2>
+          <p className="text-slate-400 mb-8 leading-relaxed">
+            CoachFlow needs camera & mic access to analyze your non-verbal cues and speech patterns in real-time.
           </p>
           
           {cameraError && (
-             <div className="mb-6 p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-3 text-red-400 text-sm text-left">
-              <AlertCircle size={18} className="shrink-0" />
+             <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3 text-red-400 text-sm text-left animate-fade-in">
+              <AlertCircle size={18} className="shrink-0 mt-0.5" />
               {cameraError}
             </div>
           )}
 
           <button 
             onClick={requestMediaAccess}
-            className="w-full bg-primary-600 hover:bg-primary-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-primary-500/20 flex items-center justify-center gap-2"
+            className="w-full bg-primary-600 hover:bg-primary-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-primary-500/20 flex items-center justify-center gap-3 hover:scale-[1.02]"
           >
-            <Video size={18} /> Enable Camera & Mic
+            <Video size={20} /> Enable Camera & Mic
           </button>
-          <p className="text-xs text-slate-600 mt-4">You can verify your setup in the next step.</p>
         </div>
       </div>
     );
@@ -288,51 +295,53 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, onEndSession }) => {
   // State: Green Room (Setup)
   if (sessionState === 'green-room') {
     return (
-      <div className="flex flex-col items-center justify-center h-[80vh] p-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="flex flex-col items-center justify-center min-h-[85vh] p-4 animate-fade-up">
+        <div className="max-w-5xl w-full grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
           
-          <div className="space-y-6">
+          <div className="space-y-8">
              <div>
-                <h2 className="text-3xl font-bold text-white mb-2">Green Room</h2>
-                <p className="text-slate-400">Check your lighting, sound, and framing.</p>
+                <h2 className="text-4xl font-bold text-white mb-2 tracking-tight">Green Room</h2>
+                <p className="text-slate-400 text-lg">Ensure you're framed correctly and audio is clear.</p>
              </div>
              
-             <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4">
-                <div className="flex items-center justify-between p-3 bg-slate-950 rounded-lg border border-slate-800">
-                   <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-green-500/20 text-green-500 rounded-lg flex items-center justify-center">
-                        <Video size={16} />
+             <div className="glass-panel p-6 rounded-2xl space-y-4">
+                <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-white/5">
+                   <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center">
+                        <Video size={20} />
                       </div>
-                      <span className="text-sm font-medium text-slate-300">Camera Active</span>
+                      <span className="font-medium text-slate-200">Video Signal</span>
                    </div>
-                   <div className="text-xs text-green-500 font-bold px-2 py-1 bg-green-500/10 rounded">Connected</div>
+                   <div className="text-xs text-green-500 font-bold px-3 py-1 bg-green-500/10 rounded-full border border-green-500/20 flex items-center gap-2">
+                     <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                     Active
+                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-3 bg-slate-950 rounded-lg border border-slate-800">
-                   <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-500/20 text-blue-500 rounded-lg flex items-center justify-center">
-                        <Mic size={16} />
-                      </div>
-                      <div className="flex flex-col">
-                         <span className="text-sm font-medium text-slate-300">Microphone Input</span>
-                         <span className="text-xs text-slate-500">Visualizer active below</span>
+                <div className="p-4 bg-slate-950/50 rounded-xl border border-white/5">
+                   <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-blue-500/20 text-blue-500 rounded-full flex items-center justify-center">
+                            <Mic size={20} />
+                          </div>
+                          <span className="font-medium text-slate-200">Audio Input</span>
                       </div>
                    </div>
-                   {stream && <AudioMeter stream={stream} />}
+                   <div className="h-10 flex items-center justify-center bg-slate-900 rounded-lg overflow-hidden border border-slate-800">
+                      {stream && <AudioMeter stream={stream} />}
+                   </div>
                 </div>
              </div>
 
-             <div className="flex gap-4">
-                <button 
-                  onClick={startSession}
-                  className="flex-1 bg-green-500 hover:bg-green-600 text-black font-bold py-4 rounded-xl transition-all shadow-lg shadow-green-500/20 flex items-center justify-center gap-2 text-lg hover:scale-[1.02]"
-                >
-                  <Play size={22} fill="currentColor" /> Start Session
-                </button>
-             </div>
+             <button 
+               onClick={startSession}
+               className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-bold py-5 rounded-2xl transition-all shadow-[0_0_30px_-5px_rgba(16,185,129,0.3)] flex items-center justify-center gap-3 text-xl transform hover:scale-[1.02]"
+             >
+               <Play size={24} fill="currentColor" /> Start Session
+             </button>
           </div>
 
-          <div className="relative aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border-2 border-slate-800">
+          <div className="relative aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-700 ring-4 ring-slate-800">
              <video 
                 ref={videoRef} 
                 autoPlay 
@@ -340,9 +349,8 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, onEndSession }) => {
                 playsInline
                 className="w-full h-full object-cover transform scale-x-[-1]" 
               />
-              <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs text-white flex items-center gap-2">
-                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                 Preview Mode
+              <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md px-4 py-1.5 rounded-full text-xs font-medium text-white flex items-center gap-2 border border-white/10">
+                 <Settings size={12} /> Preview
               </div>
           </div>
         </div>
@@ -350,7 +358,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, onEndSession }) => {
     );
   }
 
-  // State: Live Session (Existing UI Updated)
+  // State: Live Session
   const radarData = currentMetrics ? [
     { subject: 'Confidence', A: currentMetrics.metrics.confidence, fullMark: 100 },
     { subject: 'Clarity', A: currentMetrics.metrics.clarity, fullMark: 100 },
@@ -365,27 +373,28 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, onEndSession }) => {
   }));
 
   return (
-    <div className="flex flex-col h-full gap-4 max-w-7xl mx-auto p-4">
+    <div className="flex flex-col h-full gap-6 max-w-[1600px] mx-auto p-6 animate-fade-in">
       {/* Header */}
-      <div className="flex justify-between items-center bg-slate-800 p-4 rounded-xl border border-slate-700">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-full bg-red-500/20 animate-pulse">
-            <div className="w-3 h-3 rounded-full bg-red-500"></div>
+      <div className="flex justify-between items-center glass-panel px-6 py-4 rounded-2xl">
+        <div className="flex items-center gap-4">
+          <div className="relative">
+             <div className="w-4 h-4 rounded-full bg-red-500 animate-pulse"></div>
+             <div className="absolute inset-0 w-4 h-4 rounded-full bg-red-500 animate-ping opacity-75"></div>
           </div>
           <div>
-            <h2 className="font-bold text-lg text-white">{mode} Mode</h2>
-            <p className="text-slate-400 text-sm">Recording & Analyzing...</p>
+            <h2 className="font-bold text-white tracking-wide uppercase text-sm">Live Analysis: {mode}</h2>
+            <p className="text-slate-400 text-xs">AI Agent Active</p>
           </div>
         </div>
-        <div className="text-2xl font-mono text-primary-400 font-bold">
+        <div className="text-3xl font-mono text-primary-400 font-bold tabular-nums tracking-widest text-shadow-glow">
           {formatTime(elapsedTime)}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-0">
         
-        {/* Main Video Feed */}
-        <div className="lg:col-span-2 relative bg-black rounded-2xl overflow-hidden shadow-2xl border border-slate-800 flex flex-col min-h-[400px]">
+        {/* Main Video Feed HUD */}
+        <div className="lg:col-span-8 relative bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-700 ring-1 ring-white/10 flex flex-col min-h-[500px]">
           <video 
             ref={videoRef} 
             autoPlay 
@@ -395,25 +404,33 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, onEndSession }) => {
           />
           <canvas ref={canvasRef} className="hidden" />
           
-          {/* Advanced Overlay Stats */}
+          {/* HUD Overlay Frame (Corners) */}
+          <div className="absolute inset-0 pointer-events-none p-6">
+             <div className="absolute top-6 left-6 w-16 h-16 border-t-2 border-l-2 border-white/30 rounded-tl-2xl"></div>
+             <div className="absolute top-6 right-6 w-16 h-16 border-t-2 border-r-2 border-white/30 rounded-tr-2xl"></div>
+             <div className="absolute bottom-6 left-6 w-16 h-16 border-b-2 border-l-2 border-white/30 rounded-bl-2xl"></div>
+             <div className="absolute bottom-6 right-6 w-16 h-16 border-b-2 border-r-2 border-white/30 rounded-br-2xl"></div>
+          </div>
+
+          {/* Metrics Overlay */}
           {currentMetrics && (
-            <div className="absolute top-4 left-4 flex flex-col gap-2 z-20">
-              <span className={`px-3 py-1 rounded-full text-xs font-bold backdrop-blur-md bg-black/50 border border-white/10 ${
+            <div className="absolute top-8 left-8 flex flex-col gap-3 z-20 animate-scale-in">
+              <span className={`px-4 py-2 rounded-lg text-sm font-bold backdrop-blur-md bg-black/60 border border-white/10 shadow-lg ${
                 currentMetrics.sentiment === 'Positive' || currentMetrics.sentiment === 'Confident' ? 'text-green-400' : 'text-yellow-400'
               }`}>
                 {currentMetrics.sentiment}
               </span>
-              {/* Pace Meter */}
+              
               {currentMetrics.metrics.pace && (
-                 <span className={`px-3 py-1 rounded-full text-xs font-bold backdrop-blur-md bg-black/50 border border-white/10 flex items-center gap-2 ${
+                 <span className={`px-4 py-2 rounded-lg text-sm font-bold backdrop-blur-md bg-black/60 border border-white/10 shadow-lg flex items-center gap-2 ${
                    currentMetrics.metrics.pace === 'Good' ? 'text-blue-400' : 'text-red-400'
                  }`}>
-                   <Activity size={12} /> Pace: {currentMetrics.metrics.pace}
+                   <Activity size={14} /> Pace: {currentMetrics.metrics.pace}
                  </span>
               )}
-              {/* Filler Words */}
+              
               {(currentMetrics.metrics.fillerWordCount || 0) > 0 && (
-                <span className="px-3 py-1 rounded-full text-xs font-bold backdrop-blur-md bg-black/50 border border-white/10 text-amber-400">
+                <span className="px-4 py-2 rounded-lg text-sm font-bold backdrop-blur-md bg-black/60 border border-white/10 text-amber-400 shadow-lg animate-pulse">
                    Filler Words Detected
                 </span>
               )}
@@ -421,56 +438,59 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, onEndSession }) => {
           )}
 
           {/* Controls */}
-          <div className="absolute bottom-6 left-0 right-0 flex justify-center z-20">
+          <div className="absolute bottom-10 left-0 right-0 flex justify-center z-20">
             <button
               onClick={stopSession}
-              className="flex items-center gap-3 px-8 py-4 rounded-full font-bold text-lg transition-all transform shadow-xl bg-red-500 hover:bg-red-600 hover:scale-105 text-white"
+              className="group relative flex items-center gap-3 px-10 py-4 rounded-full font-bold text-lg transition-all shadow-xl bg-red-600 hover:bg-red-500 text-white overflow-hidden hover:scale-105 active:scale-95"
             >
-              <StopCircle /> End Session
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
+              <StopCircle fill="currentColor" /> End Session
             </button>
           </div>
         </div>
 
         {/* Sidebar: Metrics & Tips */}
-        <div className="flex flex-col gap-6 h-full">
+        <div className="lg:col-span-4 flex flex-col gap-6 h-full">
           
           {/* Live Score Radar */}
-          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 flex-1 min-h-[250px] flex flex-col">
-            <h3 className="text-slate-300 font-semibold mb-2 flex items-center gap-2">
-              <Activity size={18} /> Real-Time Rubric
+          <div className="glass-panel rounded-3xl p-6 flex-1 min-h-[250px] flex flex-col relative overflow-hidden">
+            <h3 className="text-slate-300 font-semibold mb-2 flex items-center gap-2 text-sm uppercase tracking-wider">
+              <Activity size={16} /> Performance Metrics
             </h3>
             <div className="flex-1 w-full h-full relative">
               {currentMetrics ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
-                    <PolarGrid stroke="#334155" />
-                    <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                    <PolarGrid stroke="#334155" strokeDasharray="3 3" />
+                    <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} />
                     <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-                    <Radar name="Current" dataKey="A" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
+                    <Radar name="Current" dataKey="A" stroke="#3b82f6" strokeWidth={3} fill="#3b82f6" fillOpacity={0.3} isAnimationActive={true} />
+                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px' }} itemStyle={{ color: '#fff' }} />
                   </RadarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex items-center justify-center h-full text-slate-500 text-sm">
-                  Analyzing performance...
+                <div className="flex flex-col items-center justify-center h-full text-slate-500 text-sm gap-2">
+                  <Loader2 className="animate-spin text-primary-500" size={24} />
+                  Analyzing input stream...
                 </div>
               )}
             </div>
           </div>
 
           {/* Suggestions Stream */}
-          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 flex-1 overflow-hidden flex flex-col">
-             <h3 className="text-slate-300 font-semibold mb-4 flex items-center gap-2">
-              <Zap size={18} className="text-yellow-400" /> AI Coach Suggestions
+          <div className="glass-panel rounded-3xl p-6 flex-1 overflow-hidden flex flex-col max-h-[400px]">
+             <h3 className="text-slate-300 font-semibold mb-4 flex items-center gap-2 text-sm uppercase tracking-wider">
+              <Zap size={16} className="text-yellow-400 fill-yellow-400" /> Live Feedback
             </h3>
-            <div className="space-y-3 overflow-y-auto pr-2 custom-scrollbar">
+            <div className="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1">
               {liveSuggestions.length === 0 ? (
-                <div className="text-slate-500 text-center mt-10 text-sm">
-                  Listening and watching...
+                <div className="text-slate-500 text-center mt-10 text-sm italic">
+                  Listening for speech patterns...
                 </div>
               ) : (
                 liveSuggestions.map((s) => (
-                  <div key={s.id} className="bg-slate-700/50 p-3 rounded-lg border-l-4 border-yellow-400 animate-in slide-in-from-right fade-in duration-500">
-                    <p className="text-sm text-slate-200">{s.text}</p>
+                  <div key={s.id} className="bg-slate-800/60 p-4 rounded-xl border-l-4 border-yellow-400 animate-slide-in-right backdrop-blur-sm shadow-sm hover:bg-slate-800 transition-colors">
+                    <p className="text-sm text-slate-200 leading-snug">{s.text}</p>
                   </div>
                 ))
               )}
@@ -478,17 +498,24 @@ const LiveSession: React.FC<LiveSessionProps> = ({ mode, onEndSession }) => {
           </div>
 
           {/* Mini Trend Chart */}
-          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-40">
-             <h3 className="text-slate-300 text-xs font-semibold mb-2">Confidence Trend</h3>
+          <div className="glass-panel rounded-3xl p-6 h-40">
+             <h3 className="text-slate-300 text-xs font-semibold mb-2 uppercase tracking-wider">Confidence Trend</h3>
              <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={lineData}>
+                  <defs>
+                    <linearGradient id="gradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
                   <XAxis dataKey="time" hide />
                   <YAxis domain={[0, 100]} hide />
                   <Tooltip 
-                    contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }}
+                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '12px' }}
                     itemStyle={{ color: '#fff' }}
+                    cursor={{ stroke: '#334155' }}
                   />
-                  <Line type="monotone" dataKey="confidence" stroke="#10b981" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="confidence" stroke="#10b981" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#10b981', stroke: '#fff' }} />
                 </LineChart>
              </ResponsiveContainer>
           </div>

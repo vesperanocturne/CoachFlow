@@ -48,9 +48,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onSignup }) => {
             Powered by Gemini 3.0
           </div>
           
-          <h1 className="text-5xl md:text-7xl font-extrabold text-white tracking-tight mb-8 max-w-4xl mx-auto leading-tight animate-in fade-in slide-in-from-bottom-8 duration-700 delay-100">
-            Master your communication with <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-purple-400">Real-Time AI Coaching</span>
+          <h1 className="text-7xl md:text-9xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 tracking-tighter mb-6 animate-in fade-in zoom-in-90 duration-1000">
+            CoachFlow
           </h1>
+          
+          <h2 className="text-3xl md:text-5xl font-bold text-slate-200 tracking-tight mb-8 max-w-4xl mx-auto leading-tight animate-in fade-in slide-in-from-bottom-8 duration-700 delay-100">
+            Master your communication with <span className="text-primary-400">Real-Time AI Coaching</span>
+          </h2>
           
           <p className="text-xl text-slate-400 max-w-2xl mx-auto mb-12 leading-relaxed animate-in fade-in slide-in-from-bottom-8 duration-700 delay-200">
             CoachFlow analyzes your speech, tone, and body language instantly during practice sessions to help you ace interviews, sales pitches, and presentations.

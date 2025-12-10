@@ -191,7 +191,6 @@ const App: React.FC = () => {
     const newBadges = [...(user?.achievements || [])];
     if (!newBadges.includes('first-step')) newBadges.push('first-step');
     if (avgMetrics.confidence > 80 && !newBadges.includes('confidence-boost')) newBadges.push('confidence-boost');
-    // Simple streak logic could go here
     
     if (user && newBadges.length > (user.achievements?.length || 0)) {
        updateUser({ achievements: newBadges });
@@ -231,10 +230,10 @@ const App: React.FC = () => {
       />
 
       {/* Navbar */}
-      <nav className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 font-bold text-xl tracking-tight text-white cursor-pointer" onClick={() => setView('home')}>
-            <span className="bg-primary-600 w-8 h-8 rounded-lg flex items-center justify-center">C</span>
+      <nav className="border-b border-white/5 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2 font-bold text-xl tracking-tight text-white cursor-pointer group" onClick={() => setView('home')}>
+            <span className="bg-gradient-to-tr from-primary-600 to-primary-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-lg shadow-primary-500/20 group-hover:scale-105 transition-transform duration-300">C</span>
             CoachFlow
           </div>
           
@@ -245,20 +244,20 @@ const App: React.FC = () => {
                  <button 
                   onClick={() => setView('dashboard')} 
                   title="Dashboard"
-                  className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                  className="p-2 hover:bg-white/5 rounded-lg text-slate-400 hover:text-white transition-all"
                 >
                     <LayoutDashboard size={20} />
                  </button>
                )}
                {view === 'live' && (
-                  <button onClick={() => setView('home')} className="text-red-400 hover:text-red-300 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-red-500/10 transition-colors">
-                     Cancel
+                  <button onClick={() => setView('home')} className="text-red-400 hover:text-red-300 text-sm font-semibold px-4 py-2 rounded-lg hover:bg-red-500/10 transition-colors">
+                     Exit Session
                   </button>
                )}
             </div>
 
             {/* User Profile */}
-            <div className="flex items-center gap-4 pl-4 border-l border-slate-800">
+            <div className="flex items-center gap-4 pl-4 border-l border-white/10">
               <div className="hidden md:flex flex-col items-end">
                 <span className="text-sm font-semibold text-white">{user.name}</span>
                 {user.isPremium ? (
@@ -268,21 +267,21 @@ const App: React.FC = () => {
                 ) : (
                   <button 
                     onClick={() => setShowPricing(true)}
-                    className="text-xs text-slate-400 hover:text-primary-400 underline decoration-dotted underline-offset-2"
+                    className="text-xs text-slate-400 hover:text-primary-400 hover:underline decoration-dotted underline-offset-2 transition-colors"
                   >
                     Upgrade to Pro
                   </button>
                 )}
               </div>
-              <div className="relative group">
+              <div className="relative group cursor-pointer" onClick={() => setShowPricing(true)}>
                 {user.avatarUrl ? (
                    <img 
                     src={user.avatarUrl} 
                     alt={user.name}
-                    className={`w-9 h-9 rounded-full object-cover border ${user.isPremium ? 'border-amber-500/50' : 'border-slate-700'}`}
+                    className={`w-9 h-9 rounded-full object-cover border-2 transition-colors ${user.isPremium ? 'border-amber-500/50' : 'border-slate-700'}`}
                   />
                 ) : (
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center border ${user.isPremium ? 'bg-amber-500/10 border-amber-500/50 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-colors ${user.isPremium ? 'bg-amber-500/10 border-amber-500/50 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
                     <UserIcon size={18} />
                   </div>
                 )}
@@ -290,7 +289,7 @@ const App: React.FC = () => {
               <button 
                 onClick={handleLogout}
                 title="Sign Out"
-                className="text-slate-400 hover:text-white hover:bg-slate-800 p-2 rounded-lg transition-all"
+                className="text-slate-400 hover:text-white hover:bg-white/5 p-2 rounded-lg transition-all"
               >
                 <LogOut size={20} />
               </button>
@@ -299,36 +298,46 @@ const App: React.FC = () => {
         </div>
       </nav>
 
-      {/* Main Content */}
-      <main className="p-0">
-        {view === 'home' && (
-          <ModeSelection 
-            onSelect={handleStartSession} 
-            isPremium={user.isPremium} 
-            onOpenPricing={() => setShowPricing(true)}
-          />
-        )}
-        
-        {view === 'live' && selectedMode && (
-          isProcessingEnd ? (
-            <div className="flex flex-col items-center justify-center h-[80vh] space-y-4">
-               <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-               <p className="text-xl font-medium animate-pulse">Generating your personalized improvement plan...</p>
-            </div>
-          ) : (
-            <LiveSession mode={selectedMode} onEndSession={handleEndSession} />
-          )
-        )}
-        
-        {view === 'dashboard' && (
-          <Dashboard 
-            history={sessionHistory} 
-            lastSession={lastSession}
-            onStartNew={() => setView('home')} 
-            user={user}
-            onOpenPricing={() => setShowPricing(true)}
-          />
-        )}
+      {/* Main Content with Transition */}
+      <main className="p-0 relative">
+        <div key={view} className="animate-fade-up">
+          {view === 'home' && (
+            <ModeSelection 
+              onSelect={handleStartSession} 
+              isPremium={user.isPremium} 
+              onOpenPricing={() => setShowPricing(true)}
+            />
+          )}
+          
+          {view === 'live' && selectedMode && (
+            isProcessingEnd ? (
+              <div className="flex flex-col items-center justify-center h-[80vh] space-y-6 animate-fade-in">
+                 <div className="relative">
+                   <div className="w-16 h-16 border-4 border-primary-500/30 border-t-primary-500 rounded-full animate-spin"></div>
+                   <div className="absolute inset-0 flex items-center justify-center">
+                     <div className="w-8 h-8 bg-primary-500 rounded-full animate-pulse opacity-50"></div>
+                   </div>
+                 </div>
+                 <div className="text-center">
+                   <h3 className="text-xl font-bold text-white mb-2">Generating Analysis</h3>
+                   <p className="text-slate-400 animate-pulse">Building your improvement plan...</p>
+                 </div>
+              </div>
+            ) : (
+              <LiveSession mode={selectedMode} onEndSession={handleEndSession} />
+            )
+          )}
+          
+          {view === 'dashboard' && (
+            <Dashboard 
+              history={sessionHistory} 
+              lastSession={lastSession}
+              onStartNew={() => setView('home')} 
+              user={user}
+              onOpenPricing={() => setShowPricing(true)}
+            />
+          )}
+        </div>
       </main>
     </div>
   );
