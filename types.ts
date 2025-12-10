@@ -6,6 +6,17 @@ export enum SessionMode {
   INVESTOR_DEMO = 'Investor Demo',
 }
 
+export interface Scenario {
+  id: string;
+  title: string;
+  description: string;
+  difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+  mode: SessionMode;
+  prompt: string;
+  durationMinutes: number;
+  tags: string[];
+}
+
 export interface AnalysisMetrics {
   confidence: number;
   clarity: number;
@@ -31,6 +42,7 @@ export interface AnalysisResult {
 export interface SessionData {
   id: string;
   mode: SessionMode;
+  scenarioId?: string; // Optional link to specific scenario
   date: string;
   durationSeconds: number;
   averageMetrics: AnalysisMetrics;
@@ -49,6 +61,13 @@ export interface Achievement {
   unlockedAt?: string;
 }
 
+export interface LearningPath {
+  week: number;
+  focusArea: string;
+  description: string;
+  tasks: { id: string; title: string; completed: boolean }[];
+}
+
 export interface User {
   id: string;
   name: string;
@@ -57,4 +76,6 @@ export interface User {
   achievements: string[]; // IDs of unlocked achievements
   avatarUrl?: string;
   provider?: 'email' | 'google';
+  streakDays?: number;
+  lastPracticeDate?: string;
 }

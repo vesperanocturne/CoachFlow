@@ -6,7 +6,7 @@ import Dashboard from './components/Dashboard';
 import Auth from './components/Auth';
 import LandingPage from './components/LandingPage';
 import PricingModal from './components/PricingModal';
-import { SessionMode, AnalysisResult, SessionData, User } from './types';
+import { SessionMode, AnalysisResult, SessionData, User, Scenario } from './types';
 import { generatePostSessionSummary } from './services/geminiService';
 import { LayoutDashboard, LogOut, User as UserIcon, Crown } from 'lucide-react';
 
@@ -57,6 +57,7 @@ const App: React.FC = () => {
   // Views within the App (when logged in)
   const [view, setView] = useState<'home' | 'live' | 'dashboard'>('home');
   const [selectedMode, setSelectedMode] = useState<SessionMode | null>(null);
+  const [selectedScenario, setSelectedScenario] = useState<Scenario | undefined>(undefined);
   const [sessionHistory, setSessionHistory] = useState<SessionData[]>(MOCK_HISTORY);
   const [lastSession, setLastSession] = useState<SessionData | null>(MOCK_HISTORY[2]);
   const [isProcessingEnd, setIsProcessingEnd] = useState(false);
@@ -65,11 +66,30 @@ const App: React.FC = () => {
   // Auth Views (when logged out)
   const [authView, setAuthView] = useState<'landing' | 'login' | 'signup'>('landing');
 
+  // Calculate Streak Logic Helper
+  const calculateStreak = (lastDateStr?: string, currentStreak: number = 0): number => {
+    if (!lastDateStr) return 0;
+    const last = new Date(lastDateStr);
+    const today = new Date();
+    // Reset hours to compare dates only
+    last.setHours(0,0,0,0);
+    today.setHours(0,0,0,0);
+    
+    const diffTime = Math.abs(today.getTime() - last.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+    if (diffDays === 0) return currentStreak; // Already practiced today
+    if (diffDays === 1) return currentStreak + 1; // Consecutive day
+    return 0; // Streak broken
+  };
+
   const handleLogin = (authenticatedUser: User) => {
-    setUser(authenticatedUser);
-    localStorage.setItem('coachflow_user', JSON.stringify(authenticatedUser));
+    // Recalculate streak on login just in case
+    const updatedUser = { ...authenticatedUser, streakDays: calculateStreak(authenticatedUser.lastPracticeDate, authenticatedUser.streakDays) };
+    setUser(updatedUser);
+    localStorage.setItem('coachflow_user', JSON.stringify(updatedUser));
     setView('home');
-    setAuthView('landing'); // Reset for next logout
+    setAuthView('landing'); 
   };
 
   const handleLogout = () => {
@@ -77,11 +97,19 @@ const App: React.FC = () => {
     localStorage.removeItem('coachflow_user');
     setView('home');
     setSelectedMode(null);
+    setSelectedScenario(undefined);
     setAuthView('landing');
   };
 
   const handleStartSession = (mode: SessionMode) => {
     setSelectedMode(mode);
+    setSelectedScenario(undefined); // Reset scenario if mode selected manually
+    setView('live');
+  };
+
+  const handleStartScenario = (scenario: Scenario) => {
+    setSelectedMode(scenario.mode);
+    setSelectedScenario(scenario);
     setView('live');
   };
 
@@ -117,7 +145,6 @@ const App: React.FC = () => {
       const reader = new FileReader();
       reader.onloadend = () => {
         const result = reader.result as string;
-        // remove "data:video/webm;base64," header
         resolve(result.split(',')[1]); 
       };
       reader.onerror = reject;
@@ -145,9 +172,8 @@ const App: React.FC = () => {
       fillerWordCount: metrics.reduce((acc, curr) => acc + (curr.metrics.fillerWordCount || 0), 0)
     };
 
-    const duration = metrics.length * 4; // Approx duration based on interval
+    const duration = metrics.length * 4; 
     
-    // Prepare Video & Summary
     let videoUrl = undefined;
     let base64Audio = undefined;
 
@@ -175,6 +201,7 @@ const App: React.FC = () => {
     const newSession: SessionData = {
       id: Date.now().toString(),
       mode: selectedMode!,
+      scenarioId: selectedScenario?.id,
       date: new Date().toISOString().split('T')[0],
       durationSeconds: duration,
       averageMetrics: avgMetrics,
@@ -187,13 +214,23 @@ const App: React.FC = () => {
     setSessionHistory(prev => [...prev, newSession]);
     setLastSession(newSession);
     
-    // Check Achievements
-    const newBadges = [...(user?.achievements || [])];
-    if (!newBadges.includes('first-step')) newBadges.push('first-step');
-    if (avgMetrics.confidence > 80 && !newBadges.includes('confidence-boost')) newBadges.push('confidence-boost');
-    
-    if (user && newBadges.length > (user.achievements?.length || 0)) {
-       updateUser({ achievements: newBadges });
+    // Update User Stats (Streak, Last Practice, Achievements)
+    if (user) {
+       const todayStr = new Date().toISOString();
+       // Only increment streak if this is the first practice of a NEW day
+       const isNewDay = !user.lastPracticeDate || new Date(user.lastPracticeDate).getDate() !== new Date().getDate();
+       const newStreak = isNewDay ? (user.streakDays || 0) + 1 : (user.streakDays || 1);
+
+       const newBadges = [...(user.achievements || [])];
+       if (!newBadges.includes('first-step')) newBadges.push('first-step');
+       if (avgMetrics.confidence > 80 && !newBadges.includes('confidence-boost')) newBadges.push('confidence-boost');
+       if (newStreak >= 3 && !newBadges.includes('streak-3')) newBadges.push('streak-3');
+       
+       updateUser({ 
+         achievements: newBadges,
+         streakDays: newStreak,
+         lastPracticeDate: todayStr
+       });
     }
 
     setView('dashboard');
@@ -212,7 +249,7 @@ const App: React.FC = () => {
     }
     return (
       <Auth 
-        key={authView} // Force re-render to switch modes
+        key={authView} 
         onLogin={handleLogin} 
         initialView={authView} 
         onBack={() => setAuthView('landing')} 
@@ -220,7 +257,6 @@ const App: React.FC = () => {
     );
   }
 
-  // Logged In App Layout
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
       <PricingModal 
@@ -238,7 +274,6 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-6">
-            {/* Navigation Links */}
             <div className="flex items-center gap-2">
                {view !== 'home' && (
                  <button 
@@ -256,7 +291,6 @@ const App: React.FC = () => {
                )}
             </div>
 
-            {/* User Profile */}
             <div className="flex items-center gap-4 pl-4 border-l border-white/10">
               <div className="hidden md:flex flex-col items-end">
                 <span className="text-sm font-semibold text-white">{user.name}</span>
@@ -298,12 +332,13 @@ const App: React.FC = () => {
         </div>
       </nav>
 
-      {/* Main Content with Transition */}
+      {/* Main Content */}
       <main className="p-0 relative">
         <div key={view} className="animate-fade-up">
           {view === 'home' && (
             <ModeSelection 
-              onSelect={handleStartSession} 
+              onSelectMode={handleStartSession}
+              onSelectScenario={handleStartScenario}
               isPremium={user.isPremium} 
               onOpenPricing={() => setShowPricing(true)}
             />
@@ -324,7 +359,11 @@ const App: React.FC = () => {
                  </div>
               </div>
             ) : (
-              <LiveSession mode={selectedMode} onEndSession={handleEndSession} />
+              <LiveSession 
+                mode={selectedMode} 
+                scenario={selectedScenario}
+                onEndSession={handleEndSession} 
+              />
             )
           )}
           
