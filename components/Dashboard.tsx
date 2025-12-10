@@ -100,15 +100,16 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
 
     const recentSessions = history.slice(-5);
     
-    // Calculate Averages for Logic
-    const avgConfidence = recentSessions.reduce((acc, s) => acc + (s.averageMetrics?.confidence || 0), 0) / (recentSessions.length || 1);
-    const avgClarity = recentSessions.reduce((acc, s) => acc + (s.averageMetrics?.clarity || 0), 0) / (recentSessions.length || 1);
-    const avgEngagement = recentSessions.reduce((acc, s) => acc + (s.averageMetrics?.engagement || 0), 0) / (recentSessions.length || 1);
+    // Calculate Averages for Logic safely using optional chaining and defaults
+    const len = recentSessions.length || 1;
+    const avgConfidence = recentSessions.reduce((acc, s) => acc + (s.averageMetrics?.confidence || 0), 0) / len;
+    const avgClarity = recentSessions.reduce((acc, s) => acc + (s.averageMetrics?.clarity || 0), 0) / len;
+    const avgEngagement = recentSessions.reduce((acc, s) => acc + (s.averageMetrics?.engagement || 0), 0) / len;
     const totalFillerWords = recentSessions.reduce((acc, s) => acc + (s.averageMetrics?.fillerWordCount || 0), 0);
-    const avgFillerWordsPerSession = totalFillerWords / (recentSessions.length || 1);
+    const avgFillerWordsPerSession = totalFillerWords / len;
     
     // Pace score: 0 for bad (Too Fast/Slow), 1 for good
-    const paceScore = recentSessions.reduce((acc, s) => acc + (s.averageMetrics?.pace === 'Good' ? 1 : 0), 0) / (recentSessions.length || 1);
+    const paceScore = recentSessions.reduce((acc, s) => acc + (s.averageMetrics?.pace === 'Good' ? 1 : 0), 0) / len;
 
     const currentWeek = Math.ceil(history.length / 5);
 
@@ -208,6 +209,7 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
   const sessionA = history.find(s => s.id === comparisonIds[0]);
   const sessionB = history.find(s => s.id === comparisonIds[1]);
 
+  // Ensure both sessions have metrics before rendering chart
   const radarComparisonData = sessionA && sessionB && sessionA.averageMetrics && sessionB.averageMetrics ? [
     { subject: 'Confidence', A: sessionA.averageMetrics.confidence, B: sessionB.averageMetrics.confidence, fullMark: 100 },
     { subject: 'Clarity', A: sessionA.averageMetrics.clarity, B: sessionB.averageMetrics.clarity, fullMark: 100 },
@@ -224,7 +226,9 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
 
   // Helper to render session details (used in Overview and History)
   const renderSessionDetail = (session: SessionData) => {
+    // Guard clause: if session or metrics missing, do not render details to prevent crash
     if (!session || !session.averageMetrics) return null;
+    
     return (
       <div className="glass-panel rounded-3xl p-8 animate-fade-in">
          <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
@@ -532,9 +536,9 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
                         <td className="px-6 py-4">
                            <div className="flex items-center gap-2">
                              <div className="w-16 h-2 bg-slate-800 rounded-full overflow-hidden">
-                               <div className="h-full bg-primary-500" style={{ width: `${(session.averageMetrics.confidence + session.averageMetrics.clarity + session.averageMetrics.engagement) / 3}%`}}></div>
+                               <div className="h-full bg-primary-500" style={{ width: `${((session.averageMetrics?.confidence || 0) + (session.averageMetrics?.clarity || 0) + (session.averageMetrics?.engagement || 0)) / 3}%`}}></div>
                              </div>
-                             <span className="text-xs font-bold text-white">{Math.round((session.averageMetrics.confidence + session.averageMetrics.clarity + session.averageMetrics.engagement) / 3)}%</span>
+                             <span className="text-xs font-bold text-white">{Math.round(((session.averageMetrics?.confidence || 0) + (session.averageMetrics?.clarity || 0) + (session.averageMetrics?.engagement || 0)) / 3)}%</span>
                            </div>
                         </td>
                         <td className="px-6 py-4 text-right">

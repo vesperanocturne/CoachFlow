@@ -185,8 +185,8 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
                 password: hashedPassword,
                 salt: salt,
                 isPremium: false,
-                achievements: [],
-                provider: 'email'
+                achievements: [] as string[],
+                provider: 'email' as const
                 };
 
                 users.push(newUser);
