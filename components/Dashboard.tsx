@@ -51,6 +51,37 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
     }
   };
 
+  // --- Dynamic Stats Calculation ---
+  const totalSessions = history.length;
+
+  const averageScore = useMemo(() => {
+    if (totalSessions === 0) return 0;
+    const sum = history.reduce((acc, session) => {
+      const s = session.averageMetrics;
+      if (!s) return acc;
+      // Average of the 4 main metrics
+      const sessionAvg = (s.confidence + s.clarity + s.engagement + s.contentRelevance) / 4;
+      return acc + sessionAvg;
+    }, 0);
+    return Math.round(sum / totalSessions);
+  }, [history, totalSessions]);
+
+  const scoreTrend = useMemo(() => {
+    if (totalSessions < 2) return null;
+    const last = history[history.length - 1];
+    const prev = history[history.length - 2];
+    
+    const getScore = (s: SessionData) => {
+        if (!s?.averageMetrics) return 0;
+        return (s.averageMetrics.confidence + s.averageMetrics.clarity + s.averageMetrics.engagement + s.averageMetrics.contentRelevance) / 4;
+    };
+    
+    const diff = getScore(last) - getScore(prev);
+    const sign = diff > 0 ? '+' : '';
+    return `${sign}${Math.round(diff)}%`;
+  }, [history, totalSessions]);
+
+
   // Calculate Learning Path based on history
   const learningPath: LearningPath = useMemo(() => {
     // 1. Onboarding Path (Less than 3 sessions)
@@ -69,15 +100,15 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
 
     const recentSessions = history.slice(-5);
     
-    // Calculate Averages
-    const avgConfidence = recentSessions.reduce((acc, s) => acc + s.averageMetrics.confidence, 0) / recentSessions.length;
-    const avgClarity = recentSessions.reduce((acc, s) => acc + s.averageMetrics.clarity, 0) / recentSessions.length;
-    const avgEngagement = recentSessions.reduce((acc, s) => acc + s.averageMetrics.engagement, 0) / recentSessions.length;
-    const totalFillerWords = recentSessions.reduce((acc, s) => acc + (s.averageMetrics.fillerWordCount || 0), 0);
-    const avgFillerWordsPerSession = totalFillerWords / recentSessions.length;
+    // Calculate Averages for Logic
+    const avgConfidence = recentSessions.reduce((acc, s) => acc + (s.averageMetrics?.confidence || 0), 0) / (recentSessions.length || 1);
+    const avgClarity = recentSessions.reduce((acc, s) => acc + (s.averageMetrics?.clarity || 0), 0) / (recentSessions.length || 1);
+    const avgEngagement = recentSessions.reduce((acc, s) => acc + (s.averageMetrics?.engagement || 0), 0) / (recentSessions.length || 1);
+    const totalFillerWords = recentSessions.reduce((acc, s) => acc + (s.averageMetrics?.fillerWordCount || 0), 0);
+    const avgFillerWordsPerSession = totalFillerWords / (recentSessions.length || 1);
     
     // Pace score: 0 for bad (Too Fast/Slow), 1 for good
-    const paceScore = recentSessions.reduce((acc, s) => acc + (s.averageMetrics.pace === 'Good' ? 1 : 0), 0) / recentSessions.length;
+    const paceScore = recentSessions.reduce((acc, s) => acc + (s.averageMetrics?.pace === 'Good' ? 1 : 0), 0) / (recentSessions.length || 1);
 
     const currentWeek = Math.ceil(history.length / 5);
 
@@ -153,14 +184,17 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
   }, [history]);
 
   // Chart Data
-  const chartData = history.map((h, i) => ({
-    name: `S${i + 1}`,
-    score: (h.averageMetrics.confidence + h.averageMetrics.clarity + h.averageMetrics.engagement) / 3,
-    confidence: h.averageMetrics.confidence,
-    clarity: h.averageMetrics.clarity,
-    engagement: h.averageMetrics.engagement,
-    date: h.date.split('-').slice(1).join('/')
-  }));
+  const chartData = history.map((h, i) => {
+    const m = h.averageMetrics || { confidence: 0, clarity: 0, engagement: 0, contentRelevance: 0 };
+    return {
+      name: `S${i + 1}`,
+      score: (m.confidence + m.clarity + m.engagement) / 3,
+      confidence: m.confidence,
+      clarity: m.clarity,
+      engagement: m.engagement,
+      date: h.date.split('-').slice(1).join('/')
+    };
+  });
 
   const handleExport = () => {
     if (!user.isPremium) {
@@ -174,7 +208,7 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
   const sessionA = history.find(s => s.id === comparisonIds[0]);
   const sessionB = history.find(s => s.id === comparisonIds[1]);
 
-  const radarComparisonData = sessionA && sessionB ? [
+  const radarComparisonData = sessionA && sessionB && sessionA.averageMetrics && sessionB.averageMetrics ? [
     { subject: 'Confidence', A: sessionA.averageMetrics.confidence, B: sessionB.averageMetrics.confidence, fullMark: 100 },
     { subject: 'Clarity', A: sessionA.averageMetrics.clarity, B: sessionB.averageMetrics.clarity, fullMark: 100 },
     { subject: 'Engagement', A: sessionA.averageMetrics.engagement, B: sessionB.averageMetrics.engagement, fullMark: 100 },
@@ -189,57 +223,60 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
   ).slice().reverse();
 
   // Helper to render session details (used in Overview and History)
-  const renderSessionDetail = (session: SessionData) => (
-    <div className="glass-panel rounded-3xl p-8 animate-fade-in">
-       <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
-          <div>
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-               <FileText size={20} className="text-primary-400" /> Session Analysis
-            </h3>
-            <p className="text-slate-500 text-sm">{session.date} • {session.mode}</p>
-          </div>
-          <div className="flex gap-2">
-            {session.bestTakeLabel && (
-                <div className="bg-amber-500/10 text-amber-400 px-3 py-1.5 rounded-lg border border-amber-500/20 flex items-center gap-1 text-sm font-bold">
-                  <Star size={14} fill="currentColor" /> {session.bestTakeLabel}
-                </div>
-            )}
-            <button onClick={handleExport} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors">
-              <Download size={18} />
-            </button>
-          </div>
-       </div>
-       
-       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="space-y-4">
-             <div className="bg-slate-900/50 p-5 rounded-2xl border border-white/5">
-                <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">AI Summary</h4>
-                <p className="text-slate-300 leading-relaxed text-sm">{session.transcriptSummary}</p>
-             </div>
-             <div className="bg-gradient-to-br from-primary-900/30 to-blue-900/30 p-5 rounded-2xl border border-primary-500/10">
-                <h4 className="text-xs font-bold text-primary-400 uppercase mb-2">Action Item</h4>
-                <p className="text-white font-medium italic">"{session.improvementScript}"</p>
-             </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-             <MetricBox label="Confidence" value={session.averageMetrics.confidence} />
-             <MetricBox label="Clarity" value={session.averageMetrics.clarity} />
-             <MetricBox label="Engagement" value={session.averageMetrics.engagement} />
-             <MetricBox label="Relevance" value={session.averageMetrics.contentRelevance} />
-          </div>
-       </div>
-
-       {session.transcript && (
-          <div className="mt-8 pt-8 border-t border-white/5">
-            <h4 className="text-xs font-bold text-slate-500 uppercase mb-4">Transcript</h4>
-            <div className="bg-slate-950/50 p-6 rounded-2xl text-slate-400 text-sm leading-relaxed max-h-60 overflow-y-auto custom-scrollbar border border-white/5">
-              {session.transcript}
+  const renderSessionDetail = (session: SessionData) => {
+    if (!session || !session.averageMetrics) return null;
+    return (
+      <div className="glass-panel rounded-3xl p-8 animate-fade-in">
+         <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
+            <div>
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                 <FileText size={20} className="text-primary-400" /> Session Analysis
+              </h3>
+              <p className="text-slate-500 text-sm">{session.date} • {session.mode}</p>
             </div>
-          </div>
-       )}
-    </div>
-  );
+            <div className="flex gap-2">
+              {session.bestTakeLabel && (
+                  <div className="bg-amber-500/10 text-amber-400 px-3 py-1.5 rounded-lg border border-amber-500/20 flex items-center gap-1 text-sm font-bold">
+                    <Star size={14} fill="currentColor" /> {session.bestTakeLabel}
+                  </div>
+              )}
+              <button onClick={handleExport} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors">
+                <Download size={18} />
+              </button>
+            </div>
+         </div>
+         
+         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="space-y-4">
+               <div className="bg-slate-900/50 p-5 rounded-2xl border border-white/5">
+                  <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">AI Summary</h4>
+                  <p className="text-slate-300 leading-relaxed text-sm">{session.transcriptSummary}</p>
+               </div>
+               <div className="bg-gradient-to-br from-primary-900/30 to-blue-900/30 p-5 rounded-2xl border border-primary-500/10">
+                  <h4 className="text-xs font-bold text-primary-400 uppercase mb-2">Action Item</h4>
+                  <p className="text-white font-medium italic">"{session.improvementScript}"</p>
+               </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+               <MetricBox label="Confidence" value={session.averageMetrics.confidence} />
+               <MetricBox label="Clarity" value={session.averageMetrics.clarity} />
+               <MetricBox label="Engagement" value={session.averageMetrics.engagement} />
+               <MetricBox label="Relevance" value={session.averageMetrics.contentRelevance} />
+            </div>
+         </div>
+  
+         {session.transcript && (
+            <div className="mt-8 pt-8 border-t border-white/5">
+              <h4 className="text-xs font-bold text-slate-500 uppercase mb-4">Transcript</h4>
+              <div className="bg-slate-950/50 p-6 rounded-2xl text-slate-400 text-sm leading-relaxed max-h-60 overflow-y-auto custom-scrollbar border border-white/5">
+                {session.transcript}
+              </div>
+            </div>
+         )}
+      </div>
+    );
+  };
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8 pb-20 animate-fade-up">
@@ -346,8 +383,8 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <StatsCard 
               title="Average Score" 
-              value="84.5" 
-              trend="+12%" 
+              value={averageScore > 0 ? averageScore.toString() : "-"} 
+              trend={scoreTrend} 
               icon={<TrendingUp size={24} />} 
               color="blue" 
             />

@@ -11,40 +11,6 @@ import { SessionMode, AnalysisResult, SessionData, User, Scenario, ShortcutDef }
 import { generatePostSessionSummary } from './services/geminiService';
 import { LayoutDashboard, LogOut, User as UserIcon, Crown, Settings as SettingsIcon } from 'lucide-react';
 
-// Mock history for initial load
-const MOCK_HISTORY: SessionData[] = [
-  {
-    id: '1',
-    mode: SessionMode.SALES_PITCH,
-    date: '2023-10-15',
-    durationSeconds: 120,
-    averageMetrics: { confidence: 65, clarity: 70, engagement: 60, contentRelevance: 80, pace: 'Good', fillerWordCount: 5 },
-    transcriptSummary: 'Good start but lacked energy in the middle.',
-    improvementScript: 'Focus on breathing.',
-    transcript: "Hello everyone, today I'd like to..."
-  },
-  {
-    id: '2',
-    mode: SessionMode.SALES_PITCH,
-    date: '2023-10-16',
-    durationSeconds: 140,
-    averageMetrics: { confidence: 72, clarity: 75, engagement: 68, contentRelevance: 85, pace: 'Good', fillerWordCount: 2 },
-    transcriptSummary: 'Better pacing today.',
-    improvementScript: 'Try pausing after key points.',
-    transcript: "Thanks for joining. The product I want to share is..."
-  },
-  {
-    id: '3',
-    mode: SessionMode.PRESENTATION,
-    date: '2023-10-18',
-    durationSeconds: 300,
-    averageMetrics: { confidence: 80, clarity: 82, engagement: 78, contentRelevance: 88, pace: 'Good', fillerWordCount: 0 },
-    transcriptSummary: 'Excellent structure and eye contact.',
-    improvementScript: 'Work on hand gestures next.',
-    transcript: "Welcome to the quarterly review. As you can see..."
-  }
-];
-
 const DEFAULT_SHORTCUTS: ShortcutDef[] = [
   { action: 'START_STOP_SESSION', key: 'R', ctrlKey: false, altKey: true },
   { action: 'TOGGLE_METRICS', key: 'M', ctrlKey: true },
@@ -67,8 +33,11 @@ const App: React.FC = () => {
   const [view, setView] = useState<'home' | 'live' | 'dashboard' | 'profile'>('home');
   const [selectedMode, setSelectedMode] = useState<SessionMode | null>(null);
   const [selectedScenario, setSelectedScenario] = useState<Scenario | undefined>(undefined);
-  const [sessionHistory, setSessionHistory] = useState<SessionData[]>(MOCK_HISTORY);
-  const [lastSession, setLastSession] = useState<SessionData | null>(MOCK_HISTORY[2]);
+  
+  // Initialize history as empty array. It will be populated from localStorage in useEffect.
+  const [sessionHistory, setSessionHistory] = useState<SessionData[]>([]);
+  const [lastSession, setLastSession] = useState<SessionData | null>(null);
+  
   const [isProcessingEnd, setIsProcessingEnd] = useState(false);
   const [showPricing, setShowPricing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -85,6 +54,35 @@ const App: React.FC = () => {
       return DEFAULT_SHORTCUTS;
     }
   });
+
+  // Load User Session History
+  useEffect(() => {
+    if (user) {
+      try {
+        const savedSessions = localStorage.getItem(`coachflow_sessions_${user.id}`);
+        if (savedSessions) {
+          const parsed = JSON.parse(savedSessions);
+          // Filter out sessions that don't have the required structure to prevent crashes
+          const validSessions = Array.isArray(parsed) 
+            ? parsed.filter((s: any) => s && s.averageMetrics && typeof s.averageMetrics.confidence === 'number') 
+            : [];
+          
+          setSessionHistory(validSessions);
+          setLastSession(validSessions.length > 0 ? validSessions[validSessions.length - 1] : null);
+        } else {
+          // New user or no history found
+          setSessionHistory([]);
+          setLastSession(null);
+        }
+      } catch (e) {
+        console.error("Failed to load session history", e);
+        setSessionHistory([]);
+      }
+    } else {
+      setSessionHistory([]);
+      setLastSession(null);
+    }
+  }, [user]);
 
   const saveShortcuts = (newShortcuts: ShortcutDef[]) => {
     setShortcuts(newShortcuts);
@@ -213,8 +211,18 @@ const App: React.FC = () => {
     setShowPricing(false);
   };
 
+  // Helper to persist history changes
+  const saveHistory = (newHistory: SessionData[]) => {
+    if (user) {
+      localStorage.setItem(`coachflow_sessions_${user.id}`, JSON.stringify(newHistory));
+    }
+  };
+
   const handleSessionUpdate = (id: string, updates: Partial<SessionData>) => {
-    setSessionHistory(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+    const updatedHistory = sessionHistory.map(s => s.id === id ? { ...s, ...updates } : s);
+    setSessionHistory(updatedHistory);
+    saveHistory(updatedHistory);
+    
     if (lastSession?.id === id) {
       setLastSession(prev => prev ? { ...prev, ...updates } : null);
     }
@@ -291,8 +299,10 @@ const App: React.FC = () => {
       videoUrl: videoUrl
     };
 
-    setSessionHistory(prev => [...prev, newSession]);
+    const updatedHistory = [...sessionHistory, newSession];
+    setSessionHistory(updatedHistory);
     setLastSession(newSession);
+    saveHistory(updatedHistory);
     
     // Update User Stats (Streak, Last Practice, Achievements)
     if (user) {

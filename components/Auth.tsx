@@ -1,13 +1,14 @@
-
 import React, { useState } from 'react';
 import { User } from '../types';
-import { Mail, Lock, User as UserIcon, ArrowRight, Loader2, AlertCircle, ArrowLeft, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
+import { Mail, Lock, User as UserIcon, ArrowRight, Loader2, AlertCircle, ArrowLeft, Eye, EyeOff, CheckCircle2, KeyRound } from 'lucide-react';
 
 interface AuthProps {
   onLogin: (user: User) => void;
   initialView?: 'login' | 'signup';
   onBack?: () => void;
 }
+
+type AuthMode = 'login' | 'signup' | 'forgot';
 
 // Helper to generate a random salt
 const generateSalt = (): string => {
@@ -51,12 +52,13 @@ const hashPassword = async (password: string, salt: string): Promise<string> => 
 };
 
 const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) => {
-  const [isLogin, setIsLogin] = useState(initialView === 'login');
+  const [mode, setMode] = useState<AuthMode>(initialView);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,34 +67,54 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
     e.preventDefault();
     setIsLoading(true);
     setError(null);
+    setSuccessMessage(null);
     
-    // Validation
-    if (!email || !password) {
-      setError("Please fill in all fields.");
+    // Basic Validation
+    if (!email) {
+      setError("Please enter your email.");
       setIsLoading(false);
       return;
     }
 
-    if (!isLogin) {
-      if (password.length < 6) {
-        setError("Password must be at least 6 characters.");
-        setIsLoading(false);
-        return;
-      }
-      if (password !== confirmPassword) {
-        setError("Passwords do not match.");
-        setIsLoading(false);
-        return;
-      }
-      if (!name) {
-        setError("Please enter your name.");
-        setIsLoading(false);
-        return;
-      }
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError("Please enter a valid email address.");
+      setIsLoading(false);
+      return;
     }
-    
+
     // Normalize email to ensure case-insensitive matching
     const normalizedEmail = email.toLowerCase().trim();
+
+    // Mode Specific Validation
+    if (mode === 'signup' || mode === 'forgot') {
+        if (!password || password.length < 6) {
+            setError("Password must be at least 6 characters.");
+            setIsLoading(false);
+            return;
+        }
+        if (password !== confirmPassword) {
+            setError("Passwords do not match.");
+            setIsLoading(false);
+            return;
+        }
+    }
+
+    if (mode === 'signup') {
+        if (!name) {
+            setError("Please enter your name.");
+            setIsLoading(false);
+            return;
+        }
+        // IP/Device Restriction Simulation
+        const hasRegistered = localStorage.getItem('coachflow_device_registered');
+        if (hasRegistered) {
+            setError("Access restricted: Only one account can be created from this device.");
+            setIsLoading(false);
+            return;
+        }
+    }
     
     try {
       // Simulate network delay for realism
@@ -101,8 +123,8 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
           const storedUsers = localStorage.getItem('coachflow_db_users');
           const users = storedUsers ? JSON.parse(storedUsers) : [];
 
-          if (isLogin) {
-            // Login Logic
+          if (mode === 'login') {
+            // --- LOGIN LOGIC ---
             const foundUser = users.find((u: any) => u.email === normalizedEmail);
             
             if (foundUser) {
@@ -110,19 +132,14 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
               let needsMigration = false;
 
               if (foundUser.salt) {
-                // 1. Modern Salted Check
+                // Modern Salted Check
                 const attemptHash = await hashPassword(password, foundUser.salt);
                 if (attemptHash === foundUser.password) {
                   isValid = true;
                 }
               } else {
-                // 2. Legacy Checks (Plain text or Unsalted Hash)
-                // Check if it was an old unsalted SHA-256 (for migration)
-                // We'd need to re-calc legacy hash without salt here, but for simplicity we rely on
-                // handling the data structure. If no salt, it might be the previous format.
-                // Re-implement legacy hash logic briefly to check:
-                const legacyHash = await hashPassword(password, ""); // Empty salt simulates old hash
-                
+                // Legacy Checks
+                const legacyHash = await hashPassword(password, "");
                 if (foundUser.password === legacyHash || foundUser.password === password) {
                   isValid = true;
                   needsMigration = true;
@@ -130,7 +147,6 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
               }
 
               if (isValid) {
-                // Auto-migrate to Salted Hash if needed
                 if (needsMigration) {
                   const newSalt = generateSalt();
                   const newHash = await hashPassword(password, newSalt);
@@ -144,63 +160,72 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
                   }
                 }
 
-                onLogin({
-                  id: foundUser.id,
-                  name: foundUser.name,
-                  email: foundUser.email,
-                  isPremium: foundUser.isPremium || false,
-                  achievements: foundUser.achievements || [],
-                  avatarUrl: foundUser.avatarUrl,
-                  provider: 'email'
-                });
+                onLogin(foundUser);
               } else {
                 setError('Invalid email or password.');
-                setIsLoading(false);
               }
             } else {
               setError('Invalid email or password.');
-              setIsLoading(false);
             }
-          } else {
-            // Signup Logic
+          } 
+          else if (mode === 'signup') {
+            // --- SIGNUP LOGIC ---
             const existingUser = users.find((u: any) => u.email === normalizedEmail);
             
             if (existingUser) {
               setError('Account already exists with this email.');
-              setIsLoading(false);
-              return;
+            } else {
+                const salt = generateSalt();
+                const hashedPassword = await hashPassword(password, salt);
+
+                const newUser = {
+                id: 'user-' + Date.now(),
+                name,
+                email: normalizedEmail,
+                password: hashedPassword,
+                salt: salt,
+                isPremium: false,
+                achievements: [],
+                provider: 'email'
+                };
+
+                users.push(newUser);
+                localStorage.setItem('coachflow_db_users', JSON.stringify(users));
+                localStorage.setItem('coachflow_device_registered', 'true');
+                
+                onLogin(newUser);
             }
-
-            const salt = generateSalt();
-            const hashedPassword = await hashPassword(password, salt);
-
-            const newUser = {
-              id: 'user-' + Date.now(),
-              name,
-              email: normalizedEmail,
-              password: hashedPassword,
-              salt: salt, // Store the salt
-              isPremium: false,
-              achievements: [],
-              provider: 'email'
-            };
-
-            users.push(newUser);
-            localStorage.setItem('coachflow_db_users', JSON.stringify(users));
+          }
+          else if (mode === 'forgot') {
+            // --- RESET PASSWORD LOGIC ---
+            const userIndex = users.findIndex((u: any) => u.email === normalizedEmail);
             
-            onLogin({
-              id: newUser.id,
-              name: newUser.name,
-              email: newUser.email,
-              isPremium: false,
-              achievements: [],
-              provider: 'email'
-            });
+            if (userIndex !== -1) {
+                const salt = generateSalt();
+                const hashedPassword = await hashPassword(password, salt);
+                
+                users[userIndex].password = hashedPassword;
+                users[userIndex].salt = salt;
+                
+                localStorage.setItem('coachflow_db_users', JSON.stringify(users));
+                
+                setSuccessMessage("Password reset successfully! Redirecting to login...");
+                setTimeout(() => {
+                    setMode('login');
+                    setSuccessMessage(null);
+                    setPassword('');
+                    setConfirmPassword('');
+                }, 2000);
+            } else {
+                // For security, usually we don't say if email exists, but for this demo app it's helpful
+                setError('No account found with this email address.');
+            }
           }
         } catch (err) {
           console.error("Auth Logic Error:", err);
           setError('An unexpected error occurred. Please try again.');
-          setIsLoading(false);
+        } finally {
+            setIsLoading(false);
         }
       }, 800);
     } catch (err) {
@@ -208,15 +233,6 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
       setError('A security error occurred. Please try again.');
       setIsLoading(false);
     }
-  };
-
-  const toggleMode = () => {
-    setIsLogin(!isLogin);
-    setError(null);
-    setEmail('');
-    setPassword('');
-    setConfirmPassword('');
-    setName('');
   };
 
   return (
@@ -244,12 +260,12 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
 
         <div className="mb-8 text-center relative z-10">
           <h2 className="text-2xl font-bold text-white mb-2">
-            {isLogin ? 'Welcome back' : 'Create your account'}
+            {mode === 'login' ? 'Welcome back' : mode === 'signup' ? 'Create your account' : 'Reset Password'}
           </h2>
           <p className="text-slate-400">
-            {isLogin 
-              ? 'Enter your details to access your dashboard' 
-              : 'Join thousands of professionals improving daily'}
+            {mode === 'login' ? 'Enter your details to access your dashboard' : 
+             mode === 'signup' ? 'Join thousands of professionals improving daily' :
+             'Enter your email and new password'}
           </p>
         </div>
 
@@ -260,15 +276,22 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
           </div>
         )}
 
+        {successMessage && (
+          <div className="mb-6 p-3 bg-green-500/10 border border-green-500/20 rounded-lg flex items-center gap-3 text-green-400 text-sm animate-in fade-in slide-in-from-top-2">
+            <CheckCircle2 size={18} className="shrink-0" />
+            {successMessage}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-5 relative z-10">
-          {!isLogin && (
+          {mode === 'signup' && (
             <div className="space-y-1.5 animate-in slide-in-from-bottom-2 fade-in">
               <label className="text-sm font-medium text-slate-300 ml-1">Full Name</label>
               <div className="relative group">
                 <UserIcon className="absolute left-3 top-3.5 text-slate-500 group-focus-within:text-primary-400 transition-colors" size={18} />
                 <input
                   type="text"
-                  required={!isLogin}
+                  required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-600 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
@@ -293,48 +316,101 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
             </div>
           </div>
 
-          <div className="space-y-1.5">
-             <div className="flex justify-between items-center px-1">
-                <label className="text-sm font-medium text-slate-300">Password</label>
-                {isLogin && (
-                  <button type="button" className="text-xs text-primary-400 hover:text-primary-300 transition-colors" onClick={() => alert("This is a demo. Try signing up properly if you forgot!")}>
-                    Forgot password?
-                  </button>
+          {(mode !== 'forgot') && (
+             <div className="space-y-1.5">
+                <div className="flex justify-between items-center px-1">
+                    <label className="text-sm font-medium text-slate-300">Password</label>
+                    {mode === 'login' && (
+                    <button 
+                        type="button" 
+                        className="text-xs text-primary-400 hover:text-primary-300 transition-colors" 
+                        onClick={() => {
+                            setMode('forgot');
+                            setError(null);
+                            setSuccessMessage(null);
+                        }}
+                    >
+                        Forgot password?
+                    </button>
+                    )}
+                </div>
+                <div className="relative group">
+                <Lock className="absolute left-3 top-3.5 text-slate-500 group-focus-within:text-primary-400 transition-colors" size={18} />
+                <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 pr-12 text-white placeholder-slate-600 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
+                    placeholder="••••••••"
+                />
+                <button 
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-3.5 text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+                </div>
+                {mode === 'signup' && password.length > 0 && password.length < 6 && (
+                <p className="text-xs text-amber-500 mt-1 ml-1 flex items-center gap-1">
+                    <AlertCircle size={10} /> Password must be at least 6 characters
+                </p>
                 )}
-             </div>
-             <div className="relative group">
-              <Lock className="absolute left-3 top-3.5 text-slate-500 group-focus-within:text-primary-400 transition-colors" size={18} />
-              <input
-                type={showPassword ? "text" : "password"}
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 pr-12 text-white placeholder-slate-600 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
-                placeholder="••••••••"
-              />
-              <button 
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-3.5 text-slate-500 hover:text-slate-300 transition-colors"
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
             </div>
-            {!isLogin && password.length > 0 && password.length < 6 && (
-               <p className="text-xs text-amber-500 mt-1 ml-1 flex items-center gap-1">
-                 <AlertCircle size={10} /> Password must be at least 6 characters
-               </p>
-            )}
-          </div>
+          )}
 
-          {!isLogin && (
+          {/* Reset Password View additional fields */}
+          {mode === 'forgot' && (
+             <>
+                <div className="space-y-1.5 animate-in slide-in-from-bottom-2 fade-in">
+                    <label className="text-sm font-medium text-slate-300 ml-1">New Password</label>
+                    <div className="relative group">
+                        <KeyRound className="absolute left-3 top-3.5 text-slate-500 group-focus-within:text-primary-400 transition-colors" size={18} />
+                        <input
+                            type={showPassword ? "text" : "password"}
+                            required
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 pr-12 text-white placeholder-slate-600 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
+                            placeholder="New password"
+                        />
+                         <button 
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3 top-3.5 text-slate-500 hover:text-slate-300 transition-colors"
+                        >
+                            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                    </div>
+                </div>
+                <div className="space-y-1.5 animate-in slide-in-from-bottom-2 fade-in">
+                    <label className="text-sm font-medium text-slate-300 ml-1">Confirm New Password</label>
+                    <div className="relative group">
+                        <Lock className="absolute left-3 top-3.5 text-slate-500 group-focus-within:text-primary-400 transition-colors" size={18} />
+                        <input
+                            type={showPassword ? "text" : "password"}
+                            required
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            className={`w-full bg-slate-950 border rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-600 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all ${
+                            confirmPassword && confirmPassword !== password ? 'border-red-500/50' : 'border-slate-800'
+                            }`}
+                            placeholder="Confirm new password"
+                        />
+                    </div>
+                </div>
+             </>
+          )}
+
+          {mode === 'signup' && (
             <div className="space-y-1.5 animate-in slide-in-from-bottom-2 fade-in">
               <label className="text-sm font-medium text-slate-300 ml-1">Confirm Password</label>
               <div className="relative group">
                 <Lock className="absolute left-3 top-3.5 text-slate-500 group-focus-within:text-primary-400 transition-colors" size={18} />
                 <input
                   type={showPassword ? "text" : "password"}
-                  required={!isLogin}
+                  required
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className={`w-full bg-slate-950 border rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-600 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all ${
@@ -360,7 +436,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
               <Loader2 className="animate-spin" size={20} />
             ) : (
               <>
-                {isLogin ? 'Sign In' : 'Create Account'}
+                {mode === 'login' ? 'Sign In' : mode === 'signup' ? 'Create Account' : 'Reset Password'}
                 <ArrowRight size={18} />
               </>
             )}
@@ -369,13 +445,36 @@ const Auth: React.FC<AuthProps> = ({ onLogin, initialView = 'login', onBack }) =
 
         <div className="mt-8 pt-6 border-t border-slate-800 text-center relative z-10">
           <p className="text-slate-400 text-sm">
-            {isLogin ? "Don't have an account? " : "Already have an account? "}
-            <button
-              onClick={toggleMode}
-              className="text-primary-400 hover:text-primary-300 font-semibold transition-colors ml-1"
-            >
-              {isLogin ? 'Sign up for free' : 'Log in'}
-            </button>
+            {mode === 'login' && (
+                <>
+                    Don't have an account? 
+                    <button
+                    onClick={() => { setMode('signup'); setError(null); }}
+                    className="text-primary-400 hover:text-primary-300 font-semibold transition-colors ml-1"
+                    >
+                    Sign up for free
+                    </button>
+                </>
+            )}
+            {mode === 'signup' && (
+                <>
+                    Already have an account? 
+                    <button
+                    onClick={() => { setMode('login'); setError(null); }}
+                    className="text-primary-400 hover:text-primary-300 font-semibold transition-colors ml-1"
+                    >
+                    Log in
+                    </button>
+                </>
+            )}
+            {mode === 'forgot' && (
+                <button
+                onClick={() => { setMode('login'); setError(null); }}
+                className="text-primary-400 hover:text-primary-300 font-semibold transition-colors"
+                >
+                Back to Login
+                </button>
+            )}
           </p>
         </div>
       </div>
