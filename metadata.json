@@ -1,0 +1,8 @@
+{
+  "name": "CoachFlow",
+  "description": "Real-time AI professional coaching platform analyzing video and audio to provide instant feedback on sales pitches, interviews, and presentations.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
