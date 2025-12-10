@@ -1,11 +1,10 @@
-
 import React, { useState, useMemo } from 'react';
-import { AnalysisResult, SessionData, User, Achievement, LearningPath } from '../types';
+import { SessionData, User, Achievement, LearningPath, SessionMode } from '../types';
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   LineChart, Line, Legend
 } from 'recharts';
-import { Trophy, TrendingUp, Calendar, ArrowRight, Video as VideoIcon, FileText, Download, Lock, Medal, Target, Zap, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { Trophy, TrendingUp, Calendar, ArrowRight, FileText, Download, Lock, Target, Zap, ChevronRight, CheckCircle2 } from 'lucide-react';
 
 interface DashboardProps {
   history: SessionData[];
@@ -33,42 +32,106 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
 
   // Calculate Learning Path based on history
   const learningPath: LearningPath = useMemo(() => {
-    const recentSessions = history.slice(-5);
-    const avgConfidence = recentSessions.reduce((acc, s) => acc + s.averageMetrics.confidence, 0) / (recentSessions.length || 1);
-    const avgPace = recentSessions.reduce((acc, s) => acc + (s.averageMetrics.pace === 'Good' ? 100 : 50), 0) / (recentSessions.length || 1);
-    
-    // Simple Heuristic
-    if (avgPace < 80) {
+    // 1. Onboarding Path (Less than 3 sessions)
+    if (history.length < 3) {
       return {
         week: 1,
-        focusArea: 'Pacing & Flow',
-        description: 'Your speaking pace fluctuates. Focus on steady, measured delivery this week.',
+        focusArea: 'Getting Started',
+        description: 'Complete 3 sessions to unlock your personalized AI learning path.',
         tasks: [
-          { id: 't1', title: 'Complete "Breathing Basics" scenario', completed: false },
-          { id: 't2', title: 'Keep pace "Good" for 2 sessions', completed: false }
-        ]
-      };
-    } else if (avgConfidence < 75) {
-      return {
-        week: 1,
-        focusArea: 'Confidence & Projection',
-        description: 'Boost your presence. Work on eye contact and strong opening statements.',
-        tasks: [
-          { id: 't1', title: 'Complete "Elevator Pitch" twice', completed: false },
-          { id: 't2', title: 'Hit 85% Confidence Score', completed: false }
-        ]
-      };
-    } else {
-      return {
-        week: 2,
-        focusArea: 'Advanced Storytelling',
-        description: 'Your fundamentals are strong. Time to focus on narrative structure and engagement.',
-        tasks: [
-          { id: 't1', title: 'Try "Investor Demo" mode', completed: false },
-          { id: 't2', title: 'Score 90% in Engagement', completed: false }
+          { id: 'onb-1', title: 'Complete your first session', completed: history.length > 0 },
+          { id: 'onb-2', title: 'Try "Sales Pitch" mode', completed: history.some(s => s.mode === SessionMode.SALES_PITCH) },
+          { id: 'onb-3', title: 'Reach 3 total sessions', completed: false }
         ]
       };
     }
+
+    const recentSessions = history.slice(-5);
+    
+    // Calculate Averages
+    const avgConfidence = recentSessions.reduce((acc, s) => acc + s.averageMetrics.confidence, 0) / recentSessions.length;
+    const avgClarity = recentSessions.reduce((acc, s) => acc + s.averageMetrics.clarity, 0) / recentSessions.length;
+    const avgEngagement = recentSessions.reduce((acc, s) => acc + s.averageMetrics.engagement, 0) / recentSessions.length;
+    const totalFillerWords = recentSessions.reduce((acc, s) => acc + (s.averageMetrics.fillerWordCount || 0), 0);
+    const avgFillerWordsPerSession = totalFillerWords / recentSessions.length;
+    
+    // Pace score: 0 for bad (Too Fast/Slow), 1 for good
+    const paceScore = recentSessions.reduce((acc, s) => acc + (s.averageMetrics.pace === 'Good' ? 1 : 0), 0) / recentSessions.length;
+
+    const currentWeek = Math.ceil(history.length / 5);
+
+    // Logic Tree for Personalized Path
+    // We prioritize "Hygiene" metrics (Pace/Filler words) before "Quality" metrics (Confidence/Engagement)
+    
+    // Priority 1: Speech Hygiene (Pace & Filler Words)
+    // If pace is consistent (> 40% bad sessions) or filler words are high (> 5 per session avg)
+    if (paceScore < 0.6 || avgFillerWordsPerSession > 5) {
+      return {
+        week: currentWeek,
+        focusArea: 'Pacing & Fluency',
+        description: 'Your speech flow is interrupted by speed issues or filler words. Let\'s smooth it out.',
+        tasks: [
+          { id: 't-pace-1', title: 'Practice "60s Elevator Pitch" focusing on pauses', completed: false },
+          { id: 't-pace-2', title: 'Achieve "Good" pace in 2 consecutive sessions', completed: false },
+          { id: 't-fill-1', title: `Keep filler words under 3 (Avg: ${Math.round(avgFillerWordsPerSession)})`, completed: false }
+        ]
+      };
+    }
+
+    // Priority 2: Clarity & Articulation
+    if (avgClarity < 75) {
+      return {
+        week: currentWeek,
+        focusArea: 'Clarity & Articulation',
+        description: 'Your message is getting lost. Focus on enunciation and concise sentences.',
+        tasks: [
+          { id: 't-clar-1', title: 'Complete "Tough Interview Question" scenario', completed: false },
+          { id: 't-clar-2', title: 'Score > 80% Clarity in Public Speaking mode', completed: false },
+          { id: 't-clar-3', title: 'Review transcript for long sentences', completed: false }
+        ]
+      };
+    }
+
+    // Priority 3: Confidence & Presence
+    if (avgConfidence < 75) {
+      return {
+        week: currentWeek,
+        focusArea: 'Confidence & Projection',
+        description: 'You have great content, but need more authority. Work on eye contact and steady tone.',
+        tasks: [
+          { id: 't-conf-1', title: 'Maintain eye contact > 80% of session', completed: false },
+          { id: 't-conf-2', title: 'Complete "Investor Demo" scenario', completed: false },
+          { id: 't-conf-3', title: 'Hit 85% Confidence Score', completed: false }
+        ]
+      };
+    }
+
+    // Priority 4: Engagement (Advanced)
+    if (avgEngagement < 80) {
+      return {
+        week: currentWeek,
+        focusArea: 'Audience Engagement',
+        description: 'You are clear and confident. Now, make them care. Use vocal variety and expressions.',
+        tasks: [
+          { id: 't-eng-1', title: 'Vary your pitch/tone in next session', completed: false },
+          { id: 't-eng-2', title: 'Score > 90% Engagement', completed: false },
+          { id: 't-eng-3', title: 'Try a storytelling approach', completed: false }
+        ]
+      };
+    }
+
+    // Mastery Path
+    return {
+      week: currentWeek,
+      focusArea: 'Mastery & Maintenance',
+      description: 'Your metrics are excellent. Challenge yourself with complex scenarios.',
+      tasks: [
+        { id: 't-mast-1', title: 'Complete "VC Rapid Fire Q&A" scenario', completed: false },
+        { id: 't-mast-2', title: 'Maintain > 90% average across all metrics', completed: false },
+        { id: 't-mast-3', title: 'Record a 5-minute presentation', completed: false }
+      ]
+    };
+
   }, [history]);
 
   // Chart Data
@@ -169,7 +232,7 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onStartNew, lastSession,
                      <span className="text-slate-500 text-xs font-bold uppercase">Current Level</span>
                      <span className="text-2xl font-bold text-white">Week {learningPath.week}</span>
                   </div>
-                  <button className="bg-white text-slate-950 px-6 py-3 rounded-xl font-bold hover:bg-slate-200 transition-colors flex items-center justify-center gap-2">
+                  <button onClick={onStartNew} className="bg-white text-slate-950 px-6 py-3 rounded-xl font-bold hover:bg-slate-200 transition-colors flex items-center justify-center gap-2">
                     Continue Path <ChevronRight size={16} />
                   </button>
                </div>
@@ -314,7 +377,7 @@ const StatsCard = ({ title, value, trend, icon, color }: any) => {
     purple: { bg: 'bg-purple-500/10', text: 'text-purple-400', border: 'border-purple-500/20' },
     emerald: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20' },
   };
-  const theme = colorMap[color];
+  const theme = colorMap[color] || colorMap.blue;
 
   return (
     <div className="glass-panel p-6 rounded-3xl hover:bg-slate-800/50 transition-colors">
